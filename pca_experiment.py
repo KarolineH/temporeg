@@ -55,11 +55,14 @@ def experiment_simple_whole_plant(points, labels):
     vis.run()
 
 def experiment_labels_inlcuded(points, labels):
-    import pdb; pdb.set_trace()
+    features = np.concatenate((points,labels), axis=1)
     #center the point cloud around the origin
-    for dimension in range(points.shape[1]):
-        points[:,dimension] = points[:,dimension] - (min(points[:,dimension] + (max(points[:,dimension])-min(points[:,dimension]))/2))
+    for dimension in range(features.shape[1]):
+        features[:,dimension] = features[:,dimension] - (min(features[:,dimension] + (max(features[:,dimension])-min(features[:,dimension]))/2))
 
+    result_3comp, vectors = pca(points, 3)
+    vis = util.draw_cloud(result_3comp, labels, draw=False)
+    vis.run()
 
 if __name__== "__main__":
     data_directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D')
