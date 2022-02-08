@@ -54,7 +54,7 @@ def open_file(path):
     instance_labels = np.array([[float(entry)for entry in line.split(' ')[3:]] for line in raw])
     return coordinates,instance_labels
 
-def draw_cloud(cloud, labels):
+def draw_cloud(cloud, labels, draw=True):
     '''
     Visualises a single point cloud
     input: numpy array
@@ -69,8 +69,10 @@ def draw_cloud(cloud, labels):
     vis = o3d.visualization.Visualizer()
     vis.create_window()
     vis.add_geometry(pcd)
-    vis.run()
-    vis.destroy_window()
+    if draw ==True:
+        vis.run()
+        vis.destroy_window()
+    return vis
 
 def colour_by_labels(pcd,labels):
     colours = np.array(Prism_10.mpl_colors)
