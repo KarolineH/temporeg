@@ -71,7 +71,7 @@ def draw_cloud(cloud, labels, draw=True):
     vis.add_geometry(pcd)
     if draw ==True:
         vis.run()
-        vis.destroy_window()
+        #vis.destroy_window()
     return vis
 
 def colour_by_labels(pcd,labels):
