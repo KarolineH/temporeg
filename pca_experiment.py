@@ -29,7 +29,46 @@ def split_into_organs(points, labels):
     #     vis = util.draw_cloud(organ[0], organ[1], draw=True)
     return organs
 
+def discretised_pca(points, labels):
+    '''
+    takes one plant point cloud, split into components (organs)
+    rotates each leaf along the broadest spread with the principal components, maintaining 3 dimensions
+    '''
+    organs = split_into_organs(points, labels)
+
+    leaves = []
+    for organ in organs[2:]:
+        rotated_organ, principal_components = pca(organ[0], 3)
+
+        mins = np.min(rotated_organ, axis=0)
+        maxes = np.max(rotated_organ, axis=0)
+        ranges = np.ptp(rotated_organ, axis=0)
+
+        centered = rotated_organ - mins #centering the leaf on the bottom left ground, not scaled yet
+        scaled = centered / ranges[0] * 255
+        discretised = np.rint(scaled).astype(int)
+        ind = np.lexsort((discretised[:,1],discretised[:,0]))
+        sorted_by_pixels = discretised[ind]
+
+        img = np.ones((256,256))*-1
+        relevant_pixels = np.unique(sorted_by_pixels[:,:2], axis = 0) #loop over each unique pixel that has points in it
+        for pixel in relevant_pixels:
+            height_indeces = np.argwhere((sorted_by_pixels[:,0]==pixel[0]) & (sorted_by_pixels[:,1]==pixel[1]))
+            img[pixel[0],pixel[1]] = np.mean(sorted_by_pixels[height_indeces,2])
+
+        leaves.append(img)
+
+    data = np.asarray(leaves) # stack all images
+    data = np.reshape(data, (len(leaves),-1)) #unroll the single images to obtain 2D vector
+    #we now have an array of leaves, should now perform pca to get eigenleaves
+    import pdb; pdb.set_trace()
+
+
 def experiment_split_by_organ(points, labels):
+    '''
+    takes one plant point cloud, split into components (organs)
+    selects the first organ and rotates it along the principal component vectors
+    '''
     components = split_into_organs(points, labels)
     transformed_component3, vectors = pca(components[0][0], 3)
     transformed_component2, _ = pca(components[0][0], 2)
@@ -45,6 +84,10 @@ def experiment_split_by_organ(points, labels):
     import pdb; pdb.set_trace()
 
 def multi_leaf_pca(points, labels):
+    '''
+    Takes multiple leaf point clouds, randomly drops points to adjust them to the same size
+    pca is broken currently
+    '''
     organs = split_into_organs(points, labels)
 
     # from all leaf point clouds of this plant,
@@ -61,6 +104,7 @@ def multi_leaf_pca(points, labels):
         np.random.shuffle(indeces)
         random_point_selection = organ[0][indeces[:min_p],:]
         leaves[i,:,:] = random_point_selection
+    leaves = np.reshape(leaves, (7,-1))
     np.reshape(leaves, (7,-1))
 
     import pdb; pdb.set_trace()
@@ -128,6 +172,7 @@ if __name__== "__main__":
     annotated_tomatoes = [entry for entry in annotated_files if "Tomato" in entry[0]]
     points,labels = util.open_file(annotated_tomatoes[0][3])
 
-    multi_leaf_pca(points, labels)
+    discretised_pca(points, labels)
+    #multi_leaf_pca(points, labels)
     #experiment_simple_whole_plant(points, labels)
     #experiment_split_by_organ(points, labels)
