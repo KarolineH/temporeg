@@ -43,25 +43,24 @@ def discretised_pca(points, labels):
         mins = np.min(rotated_organ, axis=0)
         maxes = np.max(rotated_organ, axis=0)
         ranges = np.ptp(rotated_organ, axis=0)
-
-        centered = rotated_organ - mins #centering the leaf on the bottom left ground, not scaled yet
-        scaled = centered / ranges[0] * 255
-        discretised = np.rint(scaled).astype(int)
-        ind = np.lexsort((discretised[:,1],discretised[:,0]))
-        sorted_by_pixels = discretised[ind]
+        centered = rotated_organ - (mins+ranges/2) #all three axes centered on 0
+        rescaled = ((255/2) * centered / ((max([ranges[0],ranges[1]]))/2)) + 127.5 #rescale all 3 dimensions by the same scalar so that all values lie between 0 and 255
+        pixel_coordinates = np.rint(rescaled[:,:2]).astype(int)
+        ind = np.lexsort((pixel_coordinates[:,1],pixel_coordinates[:,0]))
+        sorted_by_pixels = pixel_coordinates[ind]
 
         img = np.ones((256,256))*-1
         relevant_pixels = np.unique(sorted_by_pixels[:,:2], axis = 0) #loop over each unique pixel that has points in it
         for pixel in relevant_pixels:
             height_indeces = np.argwhere((sorted_by_pixels[:,0]==pixel[0]) & (sorted_by_pixels[:,1]==pixel[1]))
-            img[pixel[0],pixel[1]] = np.mean(sorted_by_pixels[height_indeces,2])
+            img[pixel[0],pixel[1]] = np.rint(np.mean(rescaled[height_indeces,2])).astype(int)
 
         leaves.append(img)
 
     data = np.asarray(leaves) # stack all images
     data = np.reshape(data, (len(leaves),-1)) #unroll the single images to obtain 2D vector
-    #we now have an array of leaves, should now perform pca to get eigenleaves
-    import pdb; pdb.set_trace()
+    #we now have an array of leaves (at the moment all taken from one plant)
+    #should now perform pca to get eigenleaves
 
 
 def experiment_split_by_organ(points, labels):
