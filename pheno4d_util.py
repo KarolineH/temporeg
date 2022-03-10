@@ -41,8 +41,10 @@ def get_file_locations(dir):
     return all_locations, all_annotated_locations
 
 def open_file(path):
-    '''Read the point cloud and labels from the txt file'''
+    '''
+    Read the point cloud and labels from the txt file
 
+    '''
     print('Opening file %s'%(path))
     file = open(path,"r")
     content = file.read()
@@ -52,7 +54,10 @@ def open_file(path):
     raw = lines
     coordinates = np.array([[float(entry)for entry in line.split(' ')[:3]] for line in raw])
     instance_labels = np.array([[float(entry)for entry in line.split(' ')[3:]] for line in raw])
-    return coordinates,instance_labels
+    plant_ID = os.path.basename(path).split('_a.txt')[0]
+
+    ## TODO: Also return an ID for the plant
+    return coordinates,instance_labels, plant_ID
 
 def draw_cloud(cloud, labels, draw=True):
     '''
@@ -120,5 +125,5 @@ def compare_visual(cloud1, labels1, cloud2, labels2):
 if __name__ == "__main__":
     data_directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D')
     all_files, annotated_files = get_file_locations(data_directory)
-    points,labels = open_file(annotated_files[0][0])
+    points,labels,id = open_file(annotated_files[0][0])
     draw_cloud(points, labels)

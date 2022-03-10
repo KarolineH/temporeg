@@ -11,8 +11,8 @@ def pca(points, num_comp):
     pca = PCA(n_components=num_comp)
     pca.fit(points)
     transformed_points = pca.fit_transform(points)
-    print(pca.explained_variance_ratio_)
-    print(pca.singular_values_)
+    #print(pca.explained_variance_ratio_)
+    #print(pca.singular_values_)
     return transformed_points, pca.components_
 
 def split_into_organs(points, labels):
@@ -29,15 +29,18 @@ def split_into_organs(points, labels):
     #     vis = util.draw_cloud(organ[0], organ[1], draw=True)
     return organs
 
-def discretised_pca(points, labels):
+def discretise_and_flatten(points, labels):
     '''
     takes one plant point cloud, split into components (organs)
     rotates each leaf along the broadest spread with the principal components, maintaining 3 dimensions
+    then centers and scales each leaf individually, discretises into a 256x256 depth map
+    returns an array of unraveled depth maps, one for each leaf of the plant
     '''
     organs = split_into_organs(points, labels)
 
     leaves = []
-    for organ in organs[2:]:
+    instance_labels_lst = []
+    for organ in organs[2:]: # this takes every organ excluding the stem, which is the first
         rotated_organ, principal_components = pca(organ[0], 3)
 
         mins = np.min(rotated_organ, axis=0)
@@ -56,11 +59,57 @@ def discretised_pca(points, labels):
             img[pixel[0],pixel[1]] = np.rint(np.mean(rescaled[height_indeces,2])).astype(int)
 
         leaves.append(img)
+        instance_labels_lst.append(int(organ[1][0]))
 
+    instance_labels = np.asarray(instance_labels_lst)
     data = np.asarray(leaves) # stack all images
     data = np.reshape(data, (len(leaves),-1)) #unroll the single images to obtain 2D vector
-    #we now have an array of leaves (at the moment all taken from one plant)
-    #should now perform pca to get eigenleaves
+    return data, instance_labels
+
+def stack_plant_leaves(files):
+    '''
+    Takes a list of files, opens and stacks the data in a list of lists by plant and timestep
+    '''
+    label_counter = 0
+    label_ids = {}
+
+    for plant_series in files:
+        max_nr_leaves = 0
+        for time_step in plant_series:
+            points,labels,plant_id = util.open_file(time_step)
+            leaves, instance_labels = discretise_and_flatten(points, labels)
+            numeric_labels = instance_labels - 1 + label_counter
+
+            try:
+                data = np.concatenate((data, leaves), axis=0)
+            except:
+                data = leaves
+
+            try:
+                full_labels = np.concatenate((full_labels, numeric_labels), axis = 0)
+            except:
+                full_labels = numeric_labels
+
+            if max(numeric_labels) > max_nr_leaves:
+                max_nr_leaves = max(numeric_labels)
+
+        for i in range(max_nr_leaves):
+            label_ids[label_counter + i + 1] = plant_id + '_leaf_' + str(i + 1)
+
+        label_counter += max_nr_leaves
+
+    np.save('flattened_leaves.npy', data)
+    np.save('labels.npy', full_labels)
+    print('Flattened and discretised leaf data set saved to file')
+    import pdb; pdb.set_trace()
+
+def pca_across_discretised_leaves(data):
+    '''
+    takes an array of unravelled depth maps
+    of size (examples x 65536)
+    '''
+
+    return
 
 
 def experiment_split_by_organ(points, labels):
@@ -169,9 +218,10 @@ if __name__== "__main__":
     data_directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D')
     all_files, annotated_files = util.get_file_locations(data_directory)
     annotated_tomatoes = [entry for entry in annotated_files if "Tomato" in entry[0]]
-    points,labels = util.open_file(annotated_tomatoes[0][3])
 
-    discretised_pca(points, labels)
+    stack_plant_leaves(annotated_tomatoes)
+    #discretise_and_flatten(points, labels)
+    #points,labels,id = util.open_file(annotated_tomatoes[0][3])
     #multi_leaf_pca(points, labels)
     #experiment_simple_whole_plant(points, labels)
     #experiment_split_by_organ(points, labels)
