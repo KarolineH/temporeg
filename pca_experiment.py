@@ -66,51 +66,141 @@ def discretise_and_flatten(points, labels):
     data = np.reshape(data, (len(leaves),-1)) #unroll the single images to obtain 2D vector
     return data, instance_labels
 
-def stack_plant_leaves(files):
+def stack_Tomato_leaves(file_directory):
     '''
-    Takes a list of files, opens and stacks the data in a list of lists by plant and timestep
+    Takes a directory, opens all the annotated tomato files, flattens and discretises the leaves,
+    stacks them as depth maps with their individual leaf label,
+    also saves a dictionary of IDs to reference which plant and timestep they came from
     '''
-    label_counter = 0
-    label_ids = {}
 
-    for plant_series in files:
-        max_nr_leaves = 0
-        for time_step in plant_series:
-            points,labels,plant_id = util.open_file(time_step)
-            leaves, instance_labels = discretise_and_flatten(points, labels)
-            numeric_labels = instance_labels - 1 + label_counter
+    if not os.path.isfile(os.path.join(file_directory,'flattened_leaves.npy')):
+        all_files, annotated_files = util.get_file_locations(file_directory)
+        annotated_tomatoes = [entry for entry in annotated_files if "Tomato" in entry[0]]
 
-            try:
-                data = np.concatenate((data, leaves), axis=0)
-            except:
-                data = leaves
+        label_counter = 0
+        label_ids = {}
 
-            try:
-                full_labels = np.concatenate((full_labels, numeric_labels), axis = 0)
-            except:
-                full_labels = numeric_labels
+        for plant_series in annotated_tomatoes:
+            max_nr_leaves = 0
+            for time_step in plant_series:
+                points,labels,plant_id = util.open_file(time_step)
+                leaves, instance_labels = discretise_and_flatten(points, labels)
+                numeric_labels = instance_labels - 1 + label_counter
 
-            if max(numeric_labels) > max_nr_leaves:
-                max_nr_leaves = max(numeric_labels)
+                try:
+                    data = np.concatenate((data, leaves), axis=0)
+                except:
+                    data = leaves
 
-        for i in range(max_nr_leaves):
-            label_ids[label_counter + i + 1] = plant_id + '_leaf_' + str(i + 1)
+                try:
+                    full_labels = np.concatenate((full_labels, numeric_labels), axis = 0)
+                except:
+                    full_labels = numeric_labels
 
-        label_counter += max_nr_leaves
+                if max(instance_labels) > max_nr_leaves:
+                    max_nr_leaves = max(instance_labels) - 1
 
-    np.save('flattened_leaves.npy', data)
-    np.save('labels.npy', full_labels)
-    print('Flattened and discretised leaf data set saved to file')
-    import pdb; pdb.set_trace()
+            for i in range(max_nr_leaves):
+                label_ids[label_counter + i + 1] = plant_id + '_leaf_' + str(i + 1)
 
-def pca_across_discretised_leaves(data):
+            label_counter += max_nr_leaves
+
+        np.save(os.path.join(file_directory, 'flattened_leaves.npy'), data)
+        np.save(os.path.join(file_directory, 'labels.npy'), full_labels)
+        np.save(os.path.join(file_directory, 'label_IDs.npy'), label_ids)
+        print('Flattened and discretised leaf data set saved to file')
+    else:
+        'Data has already been extracted and stacked. Loading data instead.'
+        data = np.load(os.path.join(file_directory, 'flattened_leaves.npy'))
+        full_labels = np.load(os.path.join(file_directory, 'labels.npy'))
+        label_ids = np.load(os.path.join(file_directory, 'label_IDs.npy'), allow_pickle=True)
+
+    return data, full_labels, label_ids
+
+def pca_across_discretised_leaves(data, labels):
     '''
     takes an array of unravelled depth maps
     of size (examples x 65536)
+    performs pca to indetify eigenleaves and the individual linear combination of them for each input
+    Adapted from https://machinelearningmastery.com/face-recognition-using-principal-component-analysis/
     '''
+    visualisations = True
+    out_data_leaf = 3 # number of which leaf to remove completely from the set for testing
+    im_shape = (256,256)
 
-    return
+    leaf_sort_order = labels.argsort()
+    sorted_labels = labels[leaf_sort_order]
+    sorted_data = data[leaf_sort_order] # sort the data by leaf number
 
+    # First remove one leaf completely from the set for an out-data test
+    out_data_test_set = sorted_data[np.where(sorted_labels == 3)]#  All instances of nr 3, which will be removed from the training data too
+    sorted_data = np.delete(sorted_data, np.where(sorted_labels == out_data_leaf), axis=0)
+    sorted_labels = np.delete(sorted_labels, np.where(sorted_labels == out_data_leaf), axis=0)
+    # Then extract the in-data test set, selecting one instance of each leaf that is included in the data set more than once
+    (unique, counts) = np.unique(sorted_labels, return_counts=True)
+    in_data_test_leaves = unique[np.where(counts > 1)]
+    in_data_test_examples = [np.searchsorted(sorted_labels, leaf) for leaf in in_data_test_leaves]
+    in_data_test_set = np.take(sorted_data, in_data_test_examples, axis=0)
+    in_data_test_labels = np.take(sorted_labels, in_data_test_examples, axis=0)
+    train_set = np.delete(sorted_data, in_data_test_examples, axis=0)
+    train_labels = np.delete(sorted_labels, in_data_test_examples, axis=0)
+
+    pca = PCA().fit(train_set)
+    n_components = 100
+    eigenleaves = pca.components_[:n_components]
+
+    if visualisations==True:
+        # Show some examples of input leaves
+        fig, axes = plt.subplots(4,4,sharex=True,sharey=True,figsize=(8,10))
+        for i in range(16):
+            axes[i%4][i//4].imshow(train_set[i].reshape(im_shape), cmap="gray")
+        print("Showing the input data")
+        plt.show()
+
+        # Show the first 16 eigenleaves
+        fig, axes = plt.subplots(4,4,sharex=True,sharey=True,figsize=(8,10))
+        for i in range(16):
+            axes[i%4][i//4].imshow(eigenleaves[i].reshape(im_shape), cmap="gray")
+        print("Showing the eigenleaves")
+        plt.show()
+
+        # Show how a single leaf changes over time
+        leaf_1 = np.take(sorted_data, np.where(sorted_labels == 553), axis=0).squeeze()
+        fig, axes = plt.subplots(4,4,sharex=True,sharey=True,figsize=(8,10))
+        for i in range(leaf_1.shape[0]):
+            axes[i%4][i//4].imshow(leaf_1[i].reshape(im_shape), cmap="gray")
+        print("Showing the same leaf over time")
+        plt.show()
+
+    weights = eigenleaves @ (train_set - pca.mean_).T
+
+    ### TESTING
+    outcomes = 0
+    for i,leaf in enumerate(in_data_test_set):
+        query = leaf
+        query_label = in_data_test_labels[i]
+        outcome = test_discretised_pca(query, query_label, pca, eigenleaves, weights, train_set, train_labels, im_shape)
+        if outcome == True:
+            outcomes += 1
+    import pdb; pdb.set_trace()
+
+def test_discretised_pca(query, real_label, pca, eigenleaves, weights, train_set, train_labels, im_shape):
+    print('real label '+ str(real_label))
+    query_weight = eigenleaves @ (query - pca.mean_).T
+    euclidean_distance = np.linalg.norm((weights.T - query_weight).T, axis=0)
+    best_match = np.argmin(euclidean_distance)
+    print("Best match %s with Euclidean distance %f" % (train_labels[best_match], euclidean_distance[best_match]))
+    outcome = (train_labels[best_match] == real_label)
+
+    # Visualize
+    # fig, axes = plt.subplots(1,2,sharex=True,sharey=True,figsize=(8,6))
+    # axes[0].imshow(query.reshape(im_shape), cmap="gray")
+    # axes[0].set_title("Query")
+    # axes[1].imshow(train_set[best_match].reshape(im_shape), cmap="gray")
+    # axes[1].set_title("Best match")
+    # plt.show()
+
+    return outcome
 
 def experiment_split_by_organ(points, labels):
     '''
@@ -216,10 +306,11 @@ def experiment_labels_inlcuded(points, labels):
 
 if __name__== "__main__":
     data_directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D')
-    all_files, annotated_files = util.get_file_locations(data_directory)
-    annotated_tomatoes = [entry for entry in annotated_files if "Tomato" in entry[0]]
 
-    stack_plant_leaves(annotated_tomatoes)
+    data, labels, __ = stack_Tomato_leaves(data_directory)
+    pca_across_discretised_leaves(data, labels)
+
+    import pdb; pdb.set_trace()
     #discretise_and_flatten(points, labels)
     #points,labels,id = util.open_file(annotated_tomatoes[0][3])
     #multi_leaf_pca(points, labels)
