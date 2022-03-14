@@ -31,9 +31,9 @@ def split_into_organs(points, labels):
 
 def discretise_and_flatten(points, labels):
     '''
-    takes one plant point cloud, split into components (organs)
+    takes one plant point cloud, split into components (organs),
     rotates each leaf along the broadest spread with the principal components, maintaining 3 dimensions
-    then centers and scales each leaf individually, discretises into a 256x256 depth map
+    then centers and scales each leaf individually, discretises into a 256x256 depth map with a depth average at each pixel
     returns an array of unraveled depth maps, one for each leaf of the plant
     '''
     organs = split_into_organs(points, labels)
@@ -41,13 +41,27 @@ def discretise_and_flatten(points, labels):
     leaves = []
     instance_labels_lst = []
     for organ in organs[2:]: # this takes every organ excluding the stem, which is the first
-        rotated_organ, principal_components = pca(organ[0], 3)
+        rotated_organ, principal_components = pca(organ[0], 3) #rotated to align with the 3 eigenvectors
 
         mins = np.min(rotated_organ, axis=0)
         maxes = np.max(rotated_organ, axis=0)
         ranges = np.ptp(rotated_organ, axis=0)
         centered = rotated_organ - (mins+ranges/2) #all three axes centered on 0
+
+        # Check if the orientation is right, otherwise flip the eigenvectors
+        # from the min and max point in each dimension, find their distance to every other point, along that dimension
+        # compare sum of those distances from both ends and align towards the larger one
+        # see https://dro.dur.ac.uk/18562/1/18562.pdf?DDD10+dcs0ii+dul4eg
+        distsum_low = np.sum((rotated_organ - mins), axis=0)
+        distsum_high = np.sum((maxes - rotated_organ), axis=0)
+        for i in range(distsum_low.shape[0]):
+            # Flip the axis if the sum of distances from the low point is higher
+            if [distsum_low[i] > distsum_high[i]]:
+                centered[:,i] = -centered[:,i]
+
         rescaled = ((255/2) * centered / ((max([ranges[0],ranges[1]]))/2)) + 127.5 #rescale all 3 dimensions by the same scalar so that all values lie between 0 and 255
+
+        # now discretise the point set into a depth map
         pixel_coordinates = np.rint(rescaled[:,:2]).astype(int)
         ind = np.lexsort((pixel_coordinates[:,1],pixel_coordinates[:,0]))
         sorted_by_pixels = pixel_coordinates[ind]
@@ -70,19 +84,20 @@ def stack_Tomato_leaves(file_directory):
     '''
     Takes a directory, opens all the annotated tomato files, flattens and discretises the leaves,
     stacks them as depth maps with their individual leaf label,
-    also saves a dictionary of IDs to reference which plant and timestep they came from
+    also saves a dictionary of IDs to reference which plant and timestep they came from.
+    If the files are already in the data directory, it skips over the procedure and loads from file.
     '''
 
     if not os.path.isfile(os.path.join(file_directory,'flattened_leaves.npy')):
         all_files, annotated_files = util.get_file_locations(file_directory)
-        annotated_tomatoes = [entry for entry in annotated_files if "Tomato" in entry[0]]
+        annotated_tomatoes = [entry for entry in annotated_files if "Tomato" in entry[0]] #consider all annotated tomato files
 
         label_counter = 0
         label_ids = {}
 
         for plant_series in annotated_tomatoes:
             max_nr_leaves = 0
-            for time_step in plant_series:
+            for time_step in plant_series: # for inividual scans
                 points,labels,plant_id = util.open_file(time_step)
                 leaves, instance_labels = discretise_and_flatten(points, labels)
                 numeric_labels = instance_labels - 1 + label_counter
@@ -165,7 +180,7 @@ def pca_across_discretised_leaves(data, labels):
         plt.show()
 
         # Show how a single leaf changes over time
-        leaf_1 = np.take(sorted_data, np.where(sorted_labels == 553), axis=0).squeeze()
+        leaf_1 = np.take(sorted_data, np.where(sorted_labels == 8), axis=0).squeeze()
         fig, axes = plt.subplots(4,4,sharex=True,sharey=True,figsize=(8,10))
         for i in range(leaf_1.shape[0]):
             axes[i%4][i//4].imshow(leaf_1[i].reshape(im_shape), cmap="gray")
@@ -175,32 +190,44 @@ def pca_across_discretised_leaves(data, labels):
     weights = eigenleaves @ (train_set - pca.mean_).T
 
     ### TESTING
-    outcomes = 0
+    outcomes = []
+    correct = 0
     for i,leaf in enumerate(in_data_test_set):
         query = leaf
         query_label = in_data_test_labels[i]
-        outcome = test_discretised_pca(query, query_label, pca, eigenleaves, weights, train_set, train_labels, im_shape)
+        outcome, prediction = test_discretised_pca(query, query_label, pca, eigenleaves, weights, train_set, train_labels, im_shape)
+        outcomes.append(prediction)
         if outcome == True:
-            outcomes += 1
+            correct += 1
     import pdb; pdb.set_trace()
 
+def show_all_images(data):
+    im_shape = (256,256)
+    counter = 0
+    for j in range(int(np.floor(data.shape[0]/16))):
+        fig, axes = plt.subplots(4,4,sharex=True,sharey=True,figsize=(8,10))
+        for i in range(16):
+            axes[i%4][i//4].imshow(data[counter].reshape(im_shape), cmap="gray")
+            counter += 1
+        plt.show()
+
 def test_discretised_pca(query, real_label, pca, eigenleaves, weights, train_set, train_labels, im_shape):
-    print('real label '+ str(real_label))
+    #print('real label '+ str(real_label))
     query_weight = eigenleaves @ (query - pca.mean_).T
     euclidean_distance = np.linalg.norm((weights.T - query_weight).T, axis=0)
     best_match = np.argmin(euclidean_distance)
-    print("Best match %s with Euclidean distance %f" % (train_labels[best_match], euclidean_distance[best_match]))
+    #print("Best match %s with Euclidean distance %f" % (train_labels[best_match], euclidean_distance[best_match]))
     outcome = (train_labels[best_match] == real_label)
 
-    # Visualize
-    # fig, axes = plt.subplots(1,2,sharex=True,sharey=True,figsize=(8,6))
-    # axes[0].imshow(query.reshape(im_shape), cmap="gray")
-    # axes[0].set_title("Query")
-    # axes[1].imshow(train_set[best_match].reshape(im_shape), cmap="gray")
-    # axes[1].set_title("Best match")
-    # plt.show()
+    #Visualize
+    fig, axes = plt.subplots(1,2,sharex=True,sharey=True,figsize=(8,6))
+    axes[0].imshow(query.reshape(im_shape), cmap="gray")
+    axes[0].set_title("Query")
+    axes[1].imshow(train_set[best_match].reshape(im_shape), cmap="gray")
+    axes[1].set_title("Best match")
+    plt.show()
 
-    return outcome
+    return outcome, train_labels[best_match]
 
 def experiment_split_by_organ(points, labels):
     '''
@@ -310,7 +337,7 @@ if __name__== "__main__":
     data, labels, __ = stack_Tomato_leaves(data_directory)
     pca_across_discretised_leaves(data, labels)
 
-    import pdb; pdb.set_trace()
+    #show_all_images(data)
     #discretise_and_flatten(points, labels)
     #points,labels,id = util.open_file(annotated_tomatoes[0][3])
     #multi_leaf_pca(points, labels)
