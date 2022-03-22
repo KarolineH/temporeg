@@ -5,13 +5,17 @@ import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 from sklearn.metrics import mean_squared_error
 
-def get_pca(points, num_comp):
+def get_pca(points, stempoint=None, num_comp):
     pca = PCA(n_components=num_comp)
     pca.fit(points)
     transformed_points = pca.fit_transform(points)
+    if stem is not None:
+        transformed_stempoint = pca.transform(stem)
+    else:
+        transformed_stempoint = None
     #print(pca.explained_variance_ratio_)
     #print(pca.singular_values_)
-    return transformed_points, pca.components_
+    return transformed_points, transformed_stempoint, pca.components_
 
 def discretise_and_flatten(points, labels):
     '''
@@ -21,12 +25,17 @@ def discretise_and_flatten(points, labels):
     returns an array of unraveled depth maps, one for each leaf of the plant
     '''
     organs = util.split_into_organs(points, labels)
+    stem = organs[1][0]
 
     leaves = []
     instance_labels_lst = []
     for organ in organs[2:]: # this takes every organ excluding the stem, which is the first
-        rotated_organ, principal_components = get_pca(organ[0], 3) #rotated to align with the 3 eigenvectors
 
+    ## TODO: Find nearest stem point to this leaf
+        stem_point = None
+        rotated_organ, rotated_stem_point, principal_components = get_pca(organ[0], stem_point, 3) #rotated to align with the 3 eigenvectors
+
+        import pdb; pdb.set_trace()
         mins = np.min(rotated_organ, axis=0)
         maxes = np.max(rotated_organ, axis=0)
         ranges = np.ptp(rotated_organ, axis=0)
