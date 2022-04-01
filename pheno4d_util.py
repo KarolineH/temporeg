@@ -79,9 +79,9 @@ def draw_cloud(cloud, labels, draw=True):
         #vis.destroy_window()
     return vis
 
-def colour_by_labels(pcd,labels):
+def colour_by_labels(pcd,labels, labelling_method=0):
     colours = np.array(Prism_10.mpl_colors)
-    colour_array = colours[labels[:,0].astype(int)]
+    colour_array = colours[labels[:,labelling_method].astype(int)]
     pcd.colors = o3d.utility.Vector3dVector(colour_array)
     return pcd
 
@@ -139,5 +139,5 @@ def split_into_organs(points, labels):
 if __name__ == "__main__":
     data_directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D')
     all_files, annotated_files = get_file_locations(data_directory)
-    points,labels,id = open_file(annotated_files[0][0])
+    points,labels,id = open_file(annotated_files[1][0])
     draw_cloud(points, labels)
