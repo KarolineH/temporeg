@@ -5,17 +5,46 @@ import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 from sklearn.metrics import mean_squared_error
 
-def get_pca(points, stempoint=None, num_comp):
+def get_pca(points, num_comp):
     pca = PCA(n_components=num_comp)
     pca.fit(points)
     transformed_points = pca.fit_transform(points)
-    if stem is not None:
-        transformed_stempoint = pca.transform(stem)
-    else:
-        transformed_stempoint = None
     #print(pca.explained_variance_ratio_)
     #print(pca.singular_values_)
-    return transformed_points, transformed_stempoint, pca.components_
+    return transformed_points, pca.components_
+
+def pca_across_discretised_leaves(data, labels):
+    '''
+    performs pca to indetify eigenleaves and the individual linear combination of them for each input
+    Adapted from https://machinelearningmastery.com/face-recognition-using-principal-component-analysis/
+    '''
+
+    train_set, train_labels, in_data_test_set ,__, out_data_test_set = split_train_and_test(data, labels)
+    pca_trained = PCA().fit(train_set)
+
+    return pca_trained, train_set, in_data_test_set, out_data_test_set
+
+def compress(query, components, pca):
+    query_weight = components @ (query - pca.mean_).T # compress
+    return query_weight
+
+def decompress(weights, components, pca):
+    projection = weights.T @ components + pca.mean_ # decompress
+    return projection
+
+def generate_new_leaves(pca, train_set):
+    nr_components = 80
+    training_set_weights = compress(train_set, pca.components_[:nr_components], pca)
+
+    plt.imshow(pca.mean_.reshape((256,256)), cmap="gray")
+    plt.show()
+    import pdb; pdb.set_trace()
+
+    random_weights = np.random.randn(nr_components) * training_set_weights.std()
+    random_gen_leaf = decompress(random_weights, pca.components_[:nr_components], pca)
+    plt.imshow(random_gen_leaf.reshape((256,256)), cmap="gray")
+    plt.show()
+    import pdb; pdb.set_trace()
 
 def discretise_and_flatten(points, labels):
     '''
@@ -25,17 +54,12 @@ def discretise_and_flatten(points, labels):
     returns an array of unraveled depth maps, one for each leaf of the plant
     '''
     organs = util.split_into_organs(points, labels)
-    stem = organs[1][0]
-
     leaves = []
     instance_labels_lst = []
     for organ in organs[2:]: # this takes every organ excluding the stem, which is the first
 
-    ## TODO: Find nearest stem point to this leaf
-        stem_point = None
-        rotated_organ, rotated_stem_point, principal_components = get_pca(organ[0], stem_point, 3) #rotated to align with the 3 eigenvectors
-
-        import pdb; pdb.set_trace()
+    # TODO: Fix orientation issue here
+        rotated_organ, principal_components = get_pca(organ[0], 3) #rotated to align with the 3 eigenvectors
         mins = np.min(rotated_organ, axis=0)
         maxes = np.max(rotated_organ, axis=0)
         ranges = np.ptp(rotated_organ, axis=0)
@@ -79,7 +103,7 @@ def stack_Tomato_leaves(file_directory):
     Takes a directory, opens all the annotated tomato files, flattens and discretises the leaves,
     stacks them as depth maps with their individual leaf label,
     also saves a dictionary of IDs to reference which plant and timestep they came from.
-    If the files are already in the data directory, it skips over the procedure and loads from file.
+    If these stacked files are already in the data directory, it skips over the procedure and simply loads from file.
     '''
 
     if not os.path.isfile(os.path.join(file_directory,'flattened_leaves.npy')):
@@ -126,27 +150,27 @@ def stack_Tomato_leaves(file_directory):
 
     return data, full_labels, label_ids
 
-def plot_data_examples(train_set, eigenleaves, sorted_data, sorted_labels, im_shape):
-    # Show some examples of input leaves
-    fig, axes = plt.subplots(4,4,sharex=True,sharey=True,figsize=(8,10))
-    for i in range(16):
-        axes[i%4][i//4].imshow(train_set[i].reshape(im_shape), cmap="gray")
-    print("Showing the input data")
-    plt.show()
+def test_compression_loss(pca, train_set, in_set, out_set):
+    '''
+    Tests the compression and decompression of input images with different numbers of principal components
+    and prints a chart comparing the RMSE.
+    '''
+    all_eigenleaves = pca.components_
+    query = np.concatenate((in_set, out_set)) # all test cases in one test
 
-    # Show the first 16 eigenleaves
-    fig, axes = plt.subplots(4,4,sharex=True,sharey=True,figsize=(8,10))
-    for i in range(16):
-        axes[i%4][i//4].imshow(eigenleaves[i].reshape(im_shape), cmap="gray")
-    print("Showing the eigenleaves")
-    plt.show()
+    results = []
+    for i in range(all_eigenleaves.shape[0], 0, -1):
+        query_weight = compress(query, all_eigenleaves[:i], pca)
+        reprojection = decompress(query_weight, all_eigenleaves[:i], pca)
+        # compare query to reprojection (compressed and decompressed version)
+        rmse = np.sqrt(((query - reprojection)**2).mean(axis=1)) # Root Mean Squared Error (pixelwise) for each test example
+        results.append(rmse.mean())
 
-    # Show how a single leaf changes over time
-    leaf_1 = np.take(sorted_data, np.where(sorted_labels == 8), axis=0).squeeze()
-    fig, axes = plt.subplots(4,4,sharex=True,sharey=True,figsize=(8,10))
-    for i in range(leaf_1.shape[0]):
-        axes[i%4][i//4].imshow(leaf_1[i].reshape(im_shape), cmap="gray")
-    print("Showing the same leaf over time")
+        #plot_reprojection(query, reprojection)
+    import pdb; pdb.set_trace()
+    plt.plot(range(all_eigenleaves.shape[0], 0, -1), results)
+    plt.ylabel('Mean RMSE')
+    plt.xlabel('Number of principal components')
     plt.show()
 
 def split_train_and_test(data, labels):
@@ -176,41 +200,39 @@ def split_train_and_test(data, labels):
 
     return train_set, train_labels, in_data_test_set, in_data_test_labels, out_data_test_set
 
-
-def pca_across_discretised_leaves(data, labels):
+def plot_data_examples(train_set, eigenleaves, sorted_data, sorted_labels, im_shape):
     '''
-    performs pca to indetify eigenleaves and the individual linear combination of them for each input
-    Adapted from https://machinelearningmastery.com/face-recognition-using-principal-component-analysis/
+    For visualisation only. Creates 3 plots
+    - examples of the input data
+    - examples of the principal components (eigen space)
+    - examples of the same leaf featured multiple times in the data set over time
     '''
-
-    train_set, train_labels, in_data_test_set ,__, out_data_test_set = split_train_and_test(data, labels)
-    pca_trained = PCA().fit(train_set)
-
-    return pca_trained, train_set, in_data_test_set, out_data_test_set
-
-def test_compression_loss(pca, train_set, in_set, out_set):
-    all_eigenleaves = pca.components_
-    query = np.concatenate((in_set, out_set)) # all test cases in one test
-
-    results = []
-    for i in range(all_eigenleaves.shape[0], 0, -1):
-        query_weight = all_eigenleaves[:i] @ (query - pca.mean_).T # compress
-        reprojection = query_weight.T @ all_eigenleaves[:i] + pca.mean_ # decompress
-
-        # compare query to reprojection (compressed and decompressed version)
-        rmse = np.sqrt(((query - reprojection)**2).mean(axis=1)) # Root Mean Squared Error (pixelwise) for each test example
-        results.append(rmse.mean())
-
-        #plot_reprojection(query, reprojection)
-    import pdb; pdb.set_trace()
-    plt.plot(range(all_eigenleaves.shape[0], 0, -1), results)
-    plt.ylabel('Mean RMSE')
-    plt.xlabel('Number of principal components')
+    # Show some examples of input leaves
+    fig, axes = plt.subplots(4,4,sharex=True,sharey=True,figsize=(8,10))
+    for i in range(16):
+        axes[i%4][i//4].imshow(train_set[i].reshape(im_shape), cmap="gray")
+    print("Showing the input data")
     plt.show()
 
+    # Show the first 16 eigenleaves
+    fig, axes = plt.subplots(4,4,sharex=True,sharey=True,figsize=(8,10))
+    for i in range(16):
+        axes[i%4][i//4].imshow(eigenleaves[i].reshape(im_shape), cmap="gray")
+    print("Showing the eigenleaves")
+    plt.show()
 
+    # Show how a single leaf changes over time
+    leaf_1 = np.take(sorted_data, np.where(sorted_labels == 8), axis=0).squeeze()
+    fig, axes = plt.subplots(4,4,sharex=True,sharey=True,figsize=(8,10))
+    for i in range(leaf_1.shape[0]):
+        axes[i%4][i//4].imshow(leaf_1[i].reshape(im_shape), cmap="gray")
+    print("Showing the same leaf over time")
+    plt.show()
 
 def plot_reprojection(target, projcetion):
+    '''
+    Creates a plot of 18 examples of original input images side by side with the reprojection obtained after compression and decompression
+    '''
     fig, axes = plt.subplots(6,6,sharex=True,sharey=True,figsize=(8,10))
     im_shape = (256,256)
     for i in range(18):
@@ -223,4 +245,4 @@ if __name__== "__main__":
 
     data, labels, ids = stack_Tomato_leaves(data_directory)
     pca_trained, train_set, in_set, out_set = pca_across_discretised_leaves(data, labels)
-    test_compression_loss(pca_trained, train_set, in_set, out_set)
+    generate_new_leaves(pca_trained, train_set)
