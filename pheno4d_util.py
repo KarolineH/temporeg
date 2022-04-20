@@ -59,7 +59,7 @@ def open_file(path):
     ## TODO: Also return an ID for the plant
     return coordinates,instance_labels, plant_ID
 
-def draw_cloud(cloud, labels, draw=True):
+def draw_cloud(cloud, labels, draw=True, coordinate_frame=False):
     '''
     Visualises a single point cloud
     input: numpy array
@@ -74,6 +74,8 @@ def draw_cloud(cloud, labels, draw=True):
     vis = o3d.visualization.Visualizer()
     vis.create_window()
     vis.add_geometry(pcd)
+    if coordinate_frame:
+        vis.add_geometry(o3d.geometry.TriangleMesh.create_coordinate_frame(size=100))
     if draw ==True:
         vis.run()
         #vis.destroy_window()
@@ -124,8 +126,8 @@ def compare_visual(cloud1, labels1, cloud2, labels2):
 
 def split_into_organs(points, labels):
     #center the point cloud around the origin BEFORE splitting, retain relative global pose for the components
-    for dimension in range(points.shape[1]):
-        points[:,dimension] = points[:,dimension] - (min(points[:,dimension] + (max(points[:,dimension])-min(points[:,dimension]))/2))
+    #for dimension in range(points.shape[1]):
+        #points[:,dimension] = points[:,dimension] - (min(points[:,dimension] + (max(points[:,dimension])-min(points[:,dimension]))/2))
 
     # Splitting the point cloud into sub-clouds for each unique label
     organs = []
@@ -139,5 +141,5 @@ def split_into_organs(points, labels):
 if __name__ == "__main__":
     data_directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D')
     all_files, annotated_files = get_file_locations(data_directory)
-    points,labels,id = open_file(annotated_files[1][0])
+    points,labels,id = open_file(annotated_files[1][4])
     draw_cloud(points, labels)
