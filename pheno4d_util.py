@@ -59,6 +59,11 @@ def open_file(path):
     ## TODO: Also return an ID for the plant
     return coordinates,instance_labels, plant_ID
 
+def save_as_ply(pointcloud, file):
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(pointcloud)
+    o3d.io.write_point_cloud(file, pcd)
+
 def draw_cloud(cloud, labels, draw=True, coordinate_frame=False):
     '''
     Visualises a single point cloud
