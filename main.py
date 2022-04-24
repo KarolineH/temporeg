@@ -32,7 +32,7 @@ def process_dataset(data):
                 # translate to extracted leaf coordinate system
                 pc = transform_axis_pointcloud(pc, w_axis, l_axis, h_axis)
                 id = 'plant' + str(i) + '_step' + str(j) + '_leaf' + str(int(leaf[1][0]))
-                
+
 
 
 
@@ -52,7 +52,7 @@ def isolate_leaves(points, labels):
     shifted_organs = [((organ[0] - plant_origin),organ[1]) for organ in organs] #isolate and change basis
     return shifted_organs[2:]
 
-
+import pdb; pdb.set_trace()
 
 #     np.save(os.path.join(file_directory, 'labels.npy'), full_labels)
 #     np.save(os.path.join(file_directory, 'label_IDs.npy'), label_ids)
