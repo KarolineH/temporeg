@@ -40,6 +40,8 @@ def open_and_split(in_file, out_file_full, out_file_main_only):
     export_outline(main_component, out_file_main_only)
 
 def cleanup():
+    bpy.ops.wm.read_factory_settings()
+
     bpy.ops.object.select_all(action='DESELECT') # deselect all objects
     all_objects = list(bpy.data.objects)
     for obj in all_objects:
