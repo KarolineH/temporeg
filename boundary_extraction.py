@@ -1,6 +1,7 @@
 import bpy
 import os
 import sys
+import numpy as np
 
 def open_and_split(in_file, out_file_full, out_file_main_only):
     cleanup()
@@ -25,18 +26,25 @@ def open_and_split(in_file, out_file_full, out_file_main_only):
     bpy.ops.mesh.separate(type='LOOSE') # sperate into connected outline components
     bpy.ops.object.select_all(action='DESELECT') # deselect all objects
     all_objects = list(bpy.data.objects)
-    sizes = [len(obj.data.vertices) for obj in all_objects] #find the size of each connected component
-    # take all object for which the size is equal to the max
-    largest_components = [all_objects[index] for index in range(len(all_objects)) if sizes[index] == max(sizes)]
+    areas = [(np.array(obj.dimensions)[0]*np.array(obj.dimensions)[1]) for obj in all_objects] #find the x-y spread area of each connected component, from its bounding box corners
+
+    # keep only the largest (or if there are multiple of the same size == max
+    largest_components = [all_objects[index] for index in range(len(all_objects)) if areas[index] == max(areas)]
     bpy.ops.object.select_all(action='DESELECT') # deselect all objects
-    for obj in largest_components:
-        obj.select_set(True)
     main_component = largest_components[0]
-    bpy.context.view_layer.objects.active = main_component
-    try:
-        bpy.ops.object.join()
-    except:
-        pass
+    if len(largest_components) > 1:
+        import pdb; pdb.set_trace()
+        for obj in largest_components:
+            obj.select_set(True)
+        bpy.context.view_layer.objects.active = main_component
+        try:
+            bpy.ops.object.join()
+        except:
+            pass
+    else:
+        largest_components[0].select_set(True)
+
+
     export_outline(main_component, out_file_main_only)
 
 def cleanup():
