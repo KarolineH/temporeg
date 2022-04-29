@@ -6,6 +6,7 @@ from LeafSurfaceReconstruction.helper_functions import *
 import leaf_alignment
 import pc_to_mesh
 from z_smoothing import z_smoothing_operation
+import outline_sampling
 
 # inputs
 raw_data_directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D')
@@ -13,6 +14,7 @@ aligned_leaf_directory = os.path.join(raw_data_directory, '_processed', 'aligned
 z_smoothed_directory = os.path.join(raw_data_directory, '_processed', 'z_smoothed')
 mesh_directory = os.path.join(raw_data_directory, '_processed', 'meshed')
 outline_directory = os.path.join(raw_data_directory, '_processed', 'outline')
+pca_input_directory = os.path.join(raw_data_directory, '_processed', 'pca_input')
 
 # alignment of leaves
 #plants = leaf_alignment.find_plant_locations(raw_data_directory)
@@ -29,3 +31,6 @@ if not os.path.exists(outline_directory):
     os.makedirs(outline_directory)
 command_string = 'blender --background --python boundary_extraction.py -- ' + str(mesh_directory) + ' ' + str(outline_directory)
 os.system(command_string)
+
+# Sampling the pca inputs from the outline
+outline_sampling.sampling_pca_input(outline_directory, pca_input_directory)

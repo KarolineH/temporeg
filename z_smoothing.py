@@ -3,26 +3,31 @@ import numpy as np
 import open3d as o3d
 from sklearn.neighbors import KDTree
 import copy
+import gc
 
 def z_smoothing_operation(in_dir, out_dir, radius=1.2, smoothIterations=8, smoothFactor=0.2):
+    gc.collect()
+
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)
 
     leaf_clouds = os.listdir(in_dir)
+    done = os.listdir(out_dir)
     for leaf in leaf_clouds:
         in_file = os.path.join(in_dir, leaf)
         out_file = os.path.join(out_dir, leaf)
+        if not leaf in done:
+            pc = o3d.io.read_point_cloud(in_file)
+            coordinates = np.asarray(pc.points)
+            smoothed_pc = smoothing(coordinates, radius, smoothIterations, smoothFactor)
 
-        pc = o3d.io.read_point_cloud(in_file)
-        coordinates = np.asarray(pc.points)
-        smoothed_pc = smoothing(coordinates, radius, smoothIterations, smoothFactor)
-
-        x_offset = -1.2 * (pc.get_max_bound()[0] - pc.get_min_bound()[0])
-        pointSet = o3d.geometry.PointCloud()
-        pointSet.points = o3d.utility.Vector3dVector(smoothed_pc)
-        pointSet.translate((x_offset,0,0))
-        o3d.visualization.draw_geometries([pc, pointSet])
-        o3d.io.write_point_cloud(out_file, pointSet)
+            x_offset = -1.2 * (pc.get_max_bound()[0] - pc.get_min_bound()[0])
+            pointSet = o3d.geometry.PointCloud()
+            pointSet.points = o3d.utility.Vector3dVector(smoothed_pc)
+            #pointSet.translate((x_offset,0,0))
+            #o3d.visualization.draw_geometries([pc, pointSet])
+            o3d.io.write_point_cloud(out_file, pointSet)
+            print('Saved z-smoothed point cloud %s' %out_file)
 
 def smoothing(cloud, radius=1.2, smoothIterations=8, smoothFactor=0.2):
     smoothed_cloud = copy.deepcopy(cloud)

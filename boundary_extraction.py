@@ -14,6 +14,8 @@ def open_and_split(in_file, out_file_full, out_file_main_only):
     # get the full outline
     bpy.ops.object.editmode_toggle()
     bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.mesh.fill_holes(sides=10) # fills small holes, between up to 10 edges
+    bpy.ops.mesh.select_all(action='SELECT')
     bpy.ops.mesh.region_to_loop()
     bpy.ops.mesh.separate(type='SELECTED') # separate the loop from the rest of the mesh
     outline = bpy.context.selected_objects[1]
@@ -33,6 +35,7 @@ def open_and_split(in_file, out_file_full, out_file_main_only):
     bpy.ops.object.select_all(action='DESELECT') # deselect all objects
     main_component = largest_components[0]
     if len(largest_components) > 1:
+        print('Warning, there is more than one largest connected component')
         import pdb; pdb.set_trace()
         for obj in largest_components:
             obj.select_set(True)
