@@ -64,16 +64,20 @@ def uniformly_sample_loop(loop, n=200):
     shifted_loop = np.append(loop, [loop[0]], axis=0)
     shifted_loop = np.delete(shifted_loop, (0), axis=0)
 
-    edge_vectors = shifted_loop-loop #vectors from point to point along the loop
+    edge_vectors = shifted_loop-loop # vectors from point to point along the loop
     vector_length = np.linalg.norm(edge_vectors, axis=1)
     unit_vectors = np.divide(edge_vectors, np.transpose([vector_length]))
 
     cumulative_edges = np.cumsum(vector_length) #get the cumulative distance from start to each point
     total_length = cumulative_edges[-1]
 
-    sample = np.sort(np.random.uniform(0,1,n)*total_length)
+    #sample = np.sort(np.random.uniform(0,1,n)*total_length)
+    sample = np.linspace(0, total_length, num=n, endpoint=False)
+
     nearest_lower_vertex = np.searchsorted(cumulative_edges, sample)
-    remainder = sample - cumulative_edges[nearest_lower_vertex]
+    extended_cumulative_edges = np.insert(cumulative_edges, 0, 0)
+
+    remainder = sample - extended_cumulative_edges[nearest_lower_vertex]
     remainder_vectors = unit_vectors[nearest_lower_vertex] * remainder[:, None]
     points = loop[nearest_lower_vertex] + remainder_vectors
     return points

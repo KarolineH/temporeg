@@ -35,18 +35,10 @@ def open_and_split(in_file, out_file_full, out_file_main_only):
     bpy.ops.object.select_all(action='DESELECT') # deselect all objects
     main_component = largest_components[0]
     if len(largest_components) > 1:
-        print('Warning, there is more than one largest connected component')
-        import pdb; pdb.set_trace()
-        for obj in largest_components:
-            obj.select_set(True)
-        bpy.context.view_layer.objects.active = main_component
-        try:
-            bpy.ops.object.join()
-        except:
-            pass
+        print('Warning, there is more than one largest connected component on the boundary loop. Skipping this leaf.')
+        return
     else:
         largest_components[0].select_set(True)
-
 
     export_outline(main_component, out_file_main_only)
 

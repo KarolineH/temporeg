@@ -21,16 +21,16 @@ pca_input_directory = os.path.join(raw_data_directory, '_processed', 'pca_input'
 #leaf_alignment.isolate_and_align_leaves(plants, aligned_leaf_directory) # isolate and align leaves, save to file
 
 # z smoothing
-z_smoothing_operation(aligned_leaf_directory, z_smoothed_directory, radius=1.2, smoothIterations=8, smoothFactor=0.2)
+#z_smoothing_operation(aligned_leaf_directory, z_smoothed_directory, radius=1.2, smoothIterations=8, smoothFactor=0.2)
 
 # meshing, smoothing
-pc_to_mesh.mesh_and_smooth(z_smoothed_directory, mesh_directory, maxLength=1, smoothIterations=20, smoothFactor=0.2)
+#pc_to_mesh.mesh_and_smooth(z_smoothed_directory, mesh_directory, maxLength=1, smoothIterations=20, smoothFactor=0.2)
 
 # extracting the outline (using Blender)
-if not os.path.exists(outline_directory):
-    os.makedirs(outline_directory)
-command_string = 'blender --background --python boundary_extraction.py -- ' + str(mesh_directory) + ' ' + str(outline_directory)
-os.system(command_string)
+# if not os.path.exists(outline_directory):
+#     os.makedirs(outline_directory)
+# command_string = 'blender --background --python boundary_extraction.py -- ' + str(mesh_directory) + ' ' + str(outline_directory)
+# os.system(command_string)
 
 # Sampling the pca inputs from the outline
-outline_sampling.sampling_pca_input(outline_directory, pca_input_directory)
+outline_sampling.sampling_pca_input(outline_directory, pca_input_directory, n = 500)

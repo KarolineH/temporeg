@@ -28,15 +28,21 @@ def z_smoothing_operation(in_dir, out_dir, radius=1.2, smoothIterations=8, smoot
             #o3d.visualization.draw_geometries([pc, pointSet])
             o3d.io.write_point_cloud(out_file, pointSet)
             print('Saved z-smoothed point cloud %s' %out_file)
+            pointSet = None
+            smoothed_pc = None
+            coordinates = None
 
 def smoothing(cloud, radius=1.2, smoothIterations=8, smoothFactor=0.2):
     smoothed_cloud = copy.deepcopy(cloud)
+    cloud = None
     for i in range(smoothIterations):
         tree = KDTree(smoothed_cloud, leaf_size=2)
         ind = tree.query_radius(smoothed_cloud, r=radius) # find each point's neighbourhoods by radius
         z_push_vectors = np.asarray([np.mean((smoothed_cloud[query,2]-smoothed_cloud[j,2])) for j,query in enumerate(ind)])
         smoothed_z = smoothed_cloud[:,2] + (smoothFactor*z_push_vectors)
         smoothed_cloud[:,2] = smoothed_z
+
+    tree = None
     return smoothed_cloud
 
 if __name__ == "__main__":
