@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import visualise
 from sklearn.manifold import TSNE
 import seaborn as sns
+import copy
 
 def load_inputs(dir):
     leaves = os.listdir(dir)
@@ -84,11 +85,35 @@ def test_reprojection_loss(sample, pca):
     plt.show()
 
 
-def plot_2pcs(data, labels, pca, transformed):
+def plot_3pcs(data, labels, pca):
+    flat_data = data.reshape(data.shape[0], data.shape[1]*data.shape[2])
+    transformed = pca.transform(flat_data)
+
+    ax = plt.figure(figsize=(16,10)).gca(projection='3d')
+    scatterplot = ax.scatter(xs=transformed[:,0], ys=transformed[:,1], zs=transformed[:,2],c=labels[:flat_data.shape[0],2], cmap='rainbow')
+    ax.set_xlabel('first component')
+    ax.set_ylabel('second component')
+    ax.set_zlabel('third component')
+    legend1 = ax.legend(*scatterplot.legend_elements(), title="Classes")
+    ax.add_artist(legend1)
+    plt.show()
     import pdb; pdb.set_trace()
-    plt.figure(figsize=(16,10))
-    import pdb; pdb.set_trace()
-    sns.scatterplot(x=transformed[:,0], y=transformed[:,1],hue=labels[:transformed.shape[0],0],palette=sns.color_palette("hls", 7), data=data,legend="full",alpha=0.3)
+
+def select_subset(data, labels, plant_nr=None, timestep=None, leaf=None):
+    subset = copy.deepcopy(data)
+    sublabels = copy.deepcopy(labels)
+
+    if plant_nr is not None:
+        subset = subset[np.argwhere(sublabels[:,0]==plant_nr).flatten(),:]
+        sublabels = sublabels[np.argwhere(sublabels[:,0]==plant_nr).flatten(),:]
+    if timestep is not None:
+        subset = subset[np.argwhere(sublabels[:,1]==timestep).flatten(),:]
+        sublabels = sublabels[np.argwhere(sublabels[:,1]==plant_nr).flatten(),:]
+    if leaf is not None:
+        subset = subset[np.argwhere(sublabels[:,2]==leaf).flatten(),:]
+        sublabels = sublabels[np.argwhere(sublabels[:,2]==leaf).flatten(),:]
+
+    return subset, sublabels
 
 def compress(query, components, pca):
     query_weight = components @ (query - pca.mean_).T # compress
@@ -105,8 +130,9 @@ if __name__== "__main__":
     train_ds, test_ds, train_labels, test_labels = split_dataset(data, labels)
     pca, transformed = fit_pca(train_ds)
     #test_reprojection_loss(test_ds, pca)
-    plot_2pcs(data, labels, pca, transformed)
 
+    single_plant_leaves, single_plant_labels= select_subset(data, labels, plant_nr = 2)
+    plot_3pcs(single_plant_leaves, single_plant_labels, pca)
 
     for leaf in data:
         perform_single_reprojection(leaf, pca, components = 50, draw=True)
