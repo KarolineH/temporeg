@@ -1,8 +1,8 @@
 import os
-import pheno4d_util as util
+import packages.pheno4d_util as util
 import numpy as np
-from LeafSurfaceReconstruction.leaf_axis_determination import LeafAxisDetermination
-from LeafSurfaceReconstruction.helper_functions import *
+from packages.LeafSurfaceReconstruction.leaf_axis_determination import LeafAxisDetermination
+from packages.LeafSurfaceReconstruction.helper_functions import *
 
 def find_plant_locations(directory, annotated_only = True, crop = "Tomato"):
     '''
