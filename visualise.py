@@ -92,7 +92,7 @@ def assemble_geometries(dir, plant_nr, step_nr, leaf_nr):
 
     return [pcd, mesh, outline_full, outline_filtered, sampled_outline]
 
-def draw(geometries, file, offset = False):
+def draw(geometries, file, offset = False, labels=None):
     vis = o3d.visualization.Visualizer()
     vis.create_window(window_name=file)
     width = 0
@@ -102,11 +102,11 @@ def draw(geometries, file, offset = False):
             if offset:
                 geocopy.translate((width,0,0))
                 width += 1.2 * (geo.get_max_bound()[0] - geo.get_min_bound()[0])
-                print(width)
             vis.add_geometry(geocopy)
         except:
             pass
     vis.run()
+    vis.destroy_window()
 
 def draw2(geometries, name, offset = False, labels=None):
     app = o3d.visualization.gui.Application.instance
@@ -167,7 +167,7 @@ def same_leaf_across_time(directory=None):
             clouds = [array_to_o3d_pointcloud(outline) for outline in subset]
             # draw(before_clouds, 'Timestep Leaf comparison', offset = True)
             # draw(after_clouds, 'Timestep Leaf comparison', offset = True)
-            draw2(clouds, "leaf number {}".format(leaf), offset=True, labels=sub_labels[:,1])
+            draw(clouds, "leaf number {}".format(leaf), offset=True, labels=sub_labels[:,1])
 
 # TODO:
 # Show leaves of the same plant
@@ -183,4 +183,5 @@ if __name__== "__main__":
     for file in all_leaves:
         numbers = np.array(re.findall(r'\d+', file), dtype='int')
         geometries = assemble_geometries(data_directory, numbers[0], numbers[1], numbers[2])
+        draw(geometries, file, offset = True)
         draw2(geometries, file, offset = True)
