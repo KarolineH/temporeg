@@ -35,7 +35,13 @@ def order_outline(vertices, edges):
     # Sort the vertices in order of the loop as defined by their edges
     loop = None
     sort_edges = []
-    starting_idx = np.argmin(np.linalg.norm(vertices, axis=1)) # start with the point closest to 0
+    #starting_idx = np.argmin(np.linalg.norm(vertices, axis=1)) # start with the point closest to 0
+    south_most_points = np.where(vertices[:,1] == vertices[:,1].min())
+    if len(south_most_points) > 1:
+        starting_idx = int(south_most_points[np.argmin(vertices[south_most_points,0])])
+    else:
+        starting_idx = int(south_most_points[0])
+
     doneidxs = [starting_idx]
     curridx = starting_idx
     unique, counts = np.unique(edges[:,:], return_counts=True)
@@ -60,9 +66,19 @@ def order_outline(vertices, edges):
         loop = vertices[vertex_order,:]
     return loop
 
+def check_clockwise(edge_vectors):
+    pass
+
+
 def uniformly_sample_loop(loop, n=200):
     shifted_loop = np.append(loop, [loop[0]], axis=0)
     shifted_loop = np.delete(shifted_loop, (0), axis=0)
+
+    clockwise = sum((shifted_loop[:,0]-loop[:,0]) * (shifted_loop[:,1]+loop[:,1])) > 0
+    if not clockwise:
+        loop = np.flip(loop, axis = 0)
+        shifted_loop = np.append(loop, [loop[0]], axis=0)
+        shifted_loop = np.delete(shifted_loop, (0), axis=0)
 
     edge_vectors = shifted_loop-loop # vectors from point to point along the loop
     vector_length = np.linalg.norm(edge_vectors, axis=1)

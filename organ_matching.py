@@ -90,18 +90,19 @@ def fs_distance_matrix(data, labels, pca, components=None):
     query_weight = leaf_encoding.compress(query, all_eigenleaves[:components], pca)
     dist = distance_matrix(query_weight.T, query_weight.T)
     plot_heatmap(dist)
+    return dist
 
 if __name__== "__main__":
     # Load data and fit pca
     directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'pca_input')
-    train_ds, test_ds, train_labels, test_labels, pca = leaf_encoding.get_encoding(train_split=0, dir=directory)
+    train_ds, test_ds, train_labels, test_labels, pca, transformed = leaf_encoding.get_encoding(train_split=0, dir=directory)
 
     # sort
     labels = train_labels[np.lexsort((train_labels[:,2], train_labels[:,1],train_labels[:,0])),:]
     data = train_ds[np.lexsort((train_labels[:,2], train_labels[:,1],train_labels[:,0])),:]
 
     #vis_compare_fs_distance(data, labels, pca)
-    fs_distance_matrix(data, labels, pca)
+    dist = fs_distance_matrix(data, labels, pca)
     import pdb; pdb.set_trace()
 
     same_leaf_distances, different_leaf_distances = fs_distances_between_steps(data, labels, pca)
