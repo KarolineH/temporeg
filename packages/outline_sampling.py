@@ -1,7 +1,7 @@
 import os
 import numpy as np
 
-def sampling_pca_input(in_dir, out_dir, n=200):
+def sampling_pca_input(in_dir, out_dir, normalise=True, n=200):
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)
 
@@ -14,8 +14,11 @@ def sampling_pca_input(in_dir, out_dir, n=200):
         if vertices is not None:
             loop = order_outline(vertices, edges)
             if loop is not None:
-                points = uniformly_sample_loop(loop, n)
-                save_outline_to_file(points, file_names[i], out_dir)
+                points, normalised_points = uniformly_sample_loop(loop, n)
+                if normalise:
+                    save_outline_to_file(normalised_points, file_names[i], out_dir)
+                else:
+                    save_outline_to_file(points, file_names[i], out_dir)
 
 def read_outlines(file):
     try:
@@ -35,10 +38,11 @@ def order_outline(vertices, edges):
     # Sort the vertices in order of the loop as defined by their edges
     loop = None
     sort_edges = []
-    #starting_idx = np.argmin(np.linalg.norm(vertices, axis=1)) # start with the point closest to 0
+    #starting_idx = np.argmin(np.linalg.norm(vertices, axis=1)) # start with the point closest to 0 which is the leaf centroid
+    ''' Starting point is the lowest point in y-direction'''
     south_most_points = np.where(vertices[:,1] == vertices[:,1].min())
     if len(south_most_points) > 1:
-        starting_idx = int(south_most_points[np.argmin(vertices[south_most_points,0])])
+        starting_idx = int(south_most_points[np.argmin(vertices[south_most_points,0])]) # lowest in x-direction too if there are multiple
     else:
         starting_idx = int(south_most_points[0])
 
@@ -64,6 +68,7 @@ def order_outline(vertices, edges):
         sort_edges.append([sort_edges[-1][-1], sort_edges[0][0]])
         vertex_order = np.array(sort_edges)[:,0]
         loop = vertices[vertex_order,:]
+        loop = loop - loop[0,:] # Transform all points with respect to the first point at [0,0,0]
     return loop
 
 def check_clockwise(edge_vectors):
@@ -74,6 +79,7 @@ def uniformly_sample_loop(loop, n=200):
     shifted_loop = np.append(loop, [loop[0]], axis=0)
     shifted_loop = np.delete(shifted_loop, (0), axis=0)
 
+    # Check if the outline is in clockwise order, otherwise flip
     clockwise = sum((shifted_loop[:,0]-loop[:,0]) * (shifted_loop[:,1]+loop[:,1])) > 0
     if not clockwise:
         loop = np.flip(loop, axis = 0)
@@ -96,7 +102,8 @@ def uniformly_sample_loop(loop, n=200):
     remainder = sample - extended_cumulative_edges[nearest_lower_vertex]
     remainder_vectors = unit_vectors[nearest_lower_vertex] * remainder[:, None]
     points = loop[nearest_lower_vertex] + remainder_vectors
-    return points
+    normalised_points = points/total_length
+    return points, normalised_points
 
 def save_outline_to_file(points, file_name, out_dir):
     file = os.path.join(out_dir, file_name)
@@ -106,4 +113,4 @@ def save_outline_to_file(points, file_name, out_dir):
 if __name__== "__main__":
     in_dir = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'outline')
     out_dir = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'pca_input')
-    sampling_pca_input(in_dir, out_dir)
+    sampling_pca_input(in_dir, out_dir, normalise=True)

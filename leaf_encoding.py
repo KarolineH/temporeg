@@ -93,9 +93,9 @@ def get_encoding(train_split=0, dir=None):
         dir = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'pca_input')
     data, names = load_inputs(dir)
     labels = get_labels(names)
-    standardised, scalar = standardise_pc_scale(data)
-    train_ds, test_ds, train_labels, test_labels = split_dataset(standardised, labels, split=train_split)
-    pca, transformed = fit_pca(standardised)
+    #standardised, scalar = standardise_pc_scale(data)
+    train_ds, test_ds, train_labels, test_labels = split_dataset(data, labels, split=train_split)
+    pca, transformed = fit_pca(data)
     return train_ds, test_ds, train_labels, test_labels, pca, transformed
 
 
@@ -222,7 +222,7 @@ def plot_2_components(data, pca, labels=None, components=[0,1]):
     ax.add_artist(legend1)
     plt.show()
 
-def new_random_leaf(data, labels, pca):
+def new_random_leaf_from_distribution(data, labels, pca, draw=True):
     '''
     Gets the distributions for all principal components
     Randomly samples components from their distributions to create a new plausible random leaf
@@ -231,15 +231,17 @@ def new_random_leaf(data, labels, pca):
     query = data.reshape(data.shape[0], data.shape[1]*data.shape[2])
     all_eigenleaves = pca.components_
     query_weight = compress(query, all_eigenleaves[:50], pca).T #(examples x components)
-    plt.boxplot(query_weight)
-    plt.title("Boxplots of Value distributions for the first 50 components")
-    plt.show()
-    plt.hist(query_weight[:,0], 20)
-    plt.title("Histogram of feature values on the first principal component")
-    plt.show()
-    plt.hist(query_weight[:,1], 20)
-    plt.title("Histogram of feature values on the second principal component")
-    plt.show()
+    ranges = np.asarray([np.min(query_weight, axis=0),np.max(query_weight, axis=0)])
+    if draw:
+        plt.boxplot(query_weight)
+        plt.title("Boxplots of Value distributions for the first 50 components")
+        plt.show()
+        plt.hist(query_weight[:,0], 20)
+        plt.title("Histogram of feature values on the first principal component")
+        plt.show()
+        plt.hist(query_weight[:,1], 20)
+        plt.title("Histogram of feature values on the second principal component")
+        plt.show()
 
     # random new leaf
     # sample each feature randomly from the existing feature vectors
@@ -250,7 +252,9 @@ def new_random_leaf(data, labels, pca):
 
     cloud = visualise.array_to_o3d_pointcloud(random_leaf[0])
     cloud2 = visualise.array_to_o3d_pointcloud(mean_leaf[0])
-    visualise.draw2([cloud, cloud2], 'test', offset = True )
+    if draw:
+        visualise.draw2([cloud, cloud2], 'test', offset = True )
+    return ranges
 
 def t_sne(data, labels=None, label_meaning=None):
     # tsne on just coordinates
@@ -361,17 +365,16 @@ if __name__== "__main__":
 
     #plot_explained_variance(pca)
     #test_reprojection_loss(train_ds, pca)
-
-    #new_random_leaf(train_ds, train_labels, pca)
-    #perform_single_reprojection(train_ds[1], pca, components = 2, draw=True)
+    #perform_single_reprojection(train_ds[0], pca, components = 50, draw=True)
+    #ranges = new_random_leaf_from_distribution(train_ds, train_labels, pca)
     #recreate_artefact(train_ds, pca)
 
     #plot_3_components(train_ds, pca)
     #plot_3_components(train_ds, pca, labels = train_labels)
-    plot_2_components(train_ds, pca, labels = train_labels, components = [1,2])
+    #plot_2_components(train_ds, pca, labels = train_labels, components = [0,1])
 
-    t_sne(train_ds, train_labels[:,2], label_meaning='leaf number')
-    pca_then_t_sne(train_ds, train_labels[:,2], label_meaning='leaf number')
+    #t_sne(train_ds, train_labels[:,2], label_meaning='leaf number')
+    #pca_then_t_sne(train_ds, train_labels[:,2], label_meaning='leaf number')
 
     #t_sne(single_plant_leaves, single_plant_labels[:,2], label_meaning='leaf number')
     #pca_then_t_sne(single_plant_leaves, single_plant_labels[:,2], label_meaning='leaf number')

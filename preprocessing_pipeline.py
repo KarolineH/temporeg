@@ -33,4 +33,4 @@ command_string = 'blender --background --python boundary_extraction.py -- ' + st
 os.system(command_string)
 
 # Sampling the pca inputs from the outline
-outline_sampling.sampling_pca_input(outline_directory, pca_input_directory, n = 500)
+outline_sampling.sampling_pca_input(outline_directory, pca_input_directory, normalise=True, n = 500)

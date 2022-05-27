@@ -48,16 +48,23 @@ def fs_distances_between_steps(data, labels, pca):
                 # assignment optimisation
     return same_leaf_distances, different_leaf_distances
 
-def plot_heatmap(data, show_values=False):
-    fig, ax = plt.subplots()
+def plot_heatmap(data, labels=None, ax = None, show_values=False):
+    given_ax = ax
+    if given_ax is None:
+        fig, ax = plt.subplots()
     im = ax.imshow(data, cmap='hot')
     # Loop over matrix to add numbers in the boxes
     if show_values:
         for i in range(data.shape[0]):
             for j in range(data.shape[1]):
                 text = ax.text(j, i, str(round(data[i, j], 2)), ha="center", va="center", color="w")
-    fig.tight_layout()
-    plt.show()
+    if given_ax is None:
+        fig.tight_layout()
+        plt.show(block=True)
+    if labels is not None:
+        ax.set_xticks(labels)
+        ax.set_yticks(labels)
+    return ax
 
 def vis_compare_fs_distance(data, labels, pca):
     all_eigenleaves = pca.components_
@@ -70,17 +77,24 @@ def vis_compare_fs_distance(data, labels, pca):
         for leaf in np.unique(labels[:,2]):
             subset, sub_labels = leaf_encoding.select_subset(sorted_data, sorted_labels, plant_nr = plant, leaf=leaf)
             subset2, sub_labels2 = leaf_encoding.select_subset(sorted_data, sorted_labels, plant_nr = plant, leaf=leaf+1)
-            # plots the pairwise feature space  distance matrix
-            query = subset.reshape(subset.shape[0], subset.shape[1]*subset.shape[2])
-            query2 = subset2.reshape(subset2.shape[0], subset2.shape[1]*subset2.shape[2])
-            query_weight = leaf_encoding.compress(np.concatenate((query, query2), axis = 0), all_eigenleaves[:nr_components], pca)
-            dist = distance_matrix(query_weight.T, query_weight.T)
-            plot_heatmap(dist, show_values=True)
+            #show dist matrix as heatmap
+            make_dist_matrix(subset, subset2, pca, components=50)
 
             #shows the sequence of the same leaf over time
             clouds = [visualise.array_to_o3d_pointcloud(outline) for outline in subset]
             clouds2 = [visualise.array_to_o3d_pointcloud(outline) for outline in subset2]
             visualise.draw2(clouds+clouds2, "leaf number {}".format(leaf), offset=True, labels=sub_labels[:,1])
+
+def make_dist_matrix(data1, data2, pca, draw=True, components=50):
+    # plots the pairwise feature space  distance matrix
+    all_eigenleaves = pca.components_
+    query = data1.reshape(data1.shape[0], data1.shape[1]*data1.shape[2])
+    query2 = data2.reshape(data2.shape[0], data2.shape[1]*data2.shape[2])
+    query_weight = leaf_encoding.compress(np.concatenate((query, query2), axis = 0), all_eigenleaves[:components], pca)
+    dist = distance_matrix(query_weight.T, query_weight.T)
+    if draw:
+        plot_heatmap(dist, show_values=True)
+    return dist
 
 def fs_distance_matrix(data, labels, pca, components=None):
     all_eigenleaves = pca.components_
@@ -103,7 +117,6 @@ if __name__== "__main__":
 
     #vis_compare_fs_distance(data, labels, pca)
     dist = fs_distance_matrix(data, labels, pca)
-    import pdb; pdb.set_trace()
 
     same_leaf_distances, different_leaf_distances = fs_distances_between_steps(data, labels, pca)
     plot_feature_space_distance_histogram(same_leaf_distances, different_leaf_distances)

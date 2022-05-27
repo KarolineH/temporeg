@@ -66,6 +66,34 @@ def standardise_pc_scale(data):
     out = standardised.reshape(original_shape)
     return out
 
+def set_axes_equal(ax):
+    '''Make axes of 3D plot have equal scale so that spheres appear as spheres,
+    cubes as cubes, etc..  This is one possible solution to Matplotlib's
+    ax.set_aspect('equal') and ax.axis('equal') not working for 3D.
+
+    Input
+      ax: a matplotlib axis, e.g., as output from plt.gca().
+    '''
+
+    x_limits = ax.get_xlim3d()
+    y_limits = ax.get_ylim3d()
+    z_limits = ax.get_zlim3d()
+
+    x_range = abs(x_limits[1] - x_limits[0])
+    x_middle = np.mean(x_limits)
+    y_range = abs(y_limits[1] - y_limits[0])
+    y_middle = np.mean(y_limits)
+    z_range = abs(z_limits[1] - z_limits[0])
+    z_middle = np.mean(z_limits)
+
+    # The plot bounding box is a sphere in the sense of the infinity
+    # norm, hence I call half the max range the plot radius.
+    plot_radius = 0.5*max([x_range, y_range, z_range])
+
+    ax.set_xlim3d([x_middle - plot_radius, x_middle + plot_radius])
+    ax.set_ylim3d([y_middle - plot_radius, y_middle + plot_radius])
+    ax.set_zlim3d([z_middle - plot_radius, z_middle + plot_radius])
+
 def assemble_geometries(dir, plant_nr, step_nr, leaf_nr):
     pc_file = os.path.join(dir, 'aligned', 'plant' + str(plant_nr) + '_step' + str(step_nr) + '_leaf' + str(leaf_nr) + '.ply')
     pcd = read_ply_cloud(pc_file)
@@ -168,10 +196,6 @@ def same_leaf_across_time(directory=None):
             # draw(before_clouds, 'Timestep Leaf comparison', offset = True)
             # draw(after_clouds, 'Timestep Leaf comparison', offset = True)
             draw(clouds, "leaf number {}".format(leaf), offset=True, labels=sub_labels[:,1])
-
-# TODO:
-# Show leaves of the same plant
-# or instances of the same leaf over time together
 
 if __name__== "__main__":
     #timestep_comparison()
