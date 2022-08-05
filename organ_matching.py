@@ -1,7 +1,7 @@
 import os
 import numpy as np
-import leaf_encoding
 from scipy.spatial import distance_matrix
+from scipy.optimize import linear_sum_assignment
 import matplotlib.pyplot as plt
 import leaf_encoding
 import visualise
@@ -57,7 +57,7 @@ def plot_heatmap(data, labels=None, ax = None, show_values=False):
     if show_values:
         for i in range(data.shape[0]):
             for j in range(data.shape[1]):
-                text = ax.text(j, i, str(round(data[i, j], 2)), ha="center", va="center", color="w")
+                text = ax.text(j, i, str(round(data[i, j], 3)), ha="center", va="center", color="w")
     if given_ax is None:
         fig.tight_layout()
         plt.show(block=True)
@@ -88,10 +88,11 @@ def vis_compare_fs_distance(data, labels, pca):
 def make_dist_matrix(data1, data2, pca, draw=True, components=50):
     # plots the pairwise feature space  distance matrix
     all_eigenleaves = pca.components_
-    query = data1.reshape(data1.shape[0], data1.shape[1]*data1.shape[2])
+    query1 = data1.reshape(data1.shape[0], data1.shape[1]*data1.shape[2])
     query2 = data2.reshape(data2.shape[0], data2.shape[1]*data2.shape[2])
-    query_weight = leaf_encoding.compress(np.concatenate((query, query2), axis = 0), all_eigenleaves[:components], pca)
-    dist = distance_matrix(query_weight.T, query_weight.T)
+    query_weight1 = leaf_encoding.compress(query1, all_eigenleaves[:components], pca)
+    query_weight2 = leaf_encoding.compress(query2, all_eigenleaves[:components], pca)
+    dist = distance_matrix(query_weight1.T, query_weight2.T)
     if draw:
         plot_heatmap(dist, show_values=True)
     return dist
@@ -106,6 +107,11 @@ def fs_distance_matrix(data, labels, pca, components=None):
     plot_heatmap(dist)
     return dist
 
+def compute_assignment(distance_matrix, label_set_1, label_set_2):
+    assignment = linear_sum_assignment(distance_matrix)
+    match = (label_set_1[assignment[0]], label_set_2[assignment[1]])
+    return match, np.array(list(zip(match[0],match[1])))
+
 if __name__== "__main__":
     # Load data and fit pca
     directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'pca_input')
@@ -117,6 +123,7 @@ if __name__== "__main__":
 
     #vis_compare_fs_distance(data, labels, pca)
     dist = fs_distance_matrix(data, labels, pca)
+    assignment = compute_assignment(dist, labels, labels)
 
     same_leaf_distances, different_leaf_distances = fs_distances_between_steps(data, labels, pca)
     plot_feature_space_distance_histogram(same_leaf_distances, different_leaf_distances)

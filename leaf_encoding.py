@@ -53,6 +53,8 @@ def plot_explained_variance(pca):
     print(f"Using {pca.components_.shape[0]} components")
     print(f"Explained variance ratio: {sum(pca.explained_variance_ratio_)}")
     plt.plot(np.cumsum(pca.explained_variance_ratio_[:100]))
+    plt.ylabel('Explained variance ratio')
+    plt.xlabel('Number of principal components')
     plt.show()
 
 def split_dataset(data, labels, split = 0.2):
@@ -262,12 +264,13 @@ def t_sne(data, labels=None, label_meaning=None):
     flat_data = data.reshape(data.shape[0], data.shape[1]*data.shape[2])
     X_embedded = tsne.fit_transform(flat_data)
     markers = [path.Path(leaf[:,:2]) for leaf in data]
-    max_color = max(labels)
-    cmap = cm.get_cmap('rainbow')
-    colours = cmap((labels/max_color))
+    if labels is not None:
+        max_color = max(labels)
+        cmap = cm.get_cmap('rainbow')
+        colours = cmap((labels/max_color))
 
     fig, ax = plt.subplots()
-    ax.set_title('t-SNE performed on outline coordinates')
+    ax.set_title('t-SNE embedding of leaf outline coordinates')
     if labels is not None:
         for i, _m, _x, _y in zip(range(len(markers)), markers, X_embedded[:,0], X_embedded[:,1]):
             scatterplot = ax.scatter(_x, _y, marker=_m, s=500, c='#FFFFFF', edgecolors=colours[i].reshape(1,-1))
@@ -275,7 +278,7 @@ def t_sne(data, labels=None, label_meaning=None):
         legend1 = ax.legend(np.unique(labels, axis = 0), labelcolor=cmap((np.unique(labels, axis = 0)/max_color)), ncol=2, markerscale=0)
         ax.add_artist(legend1)
         if label_meaning is not None:
-            ax.set_title('t-SNE performed on outline coordinates. Colours represent {}'.format(label_meaning))
+            ax.set_title('t-SNE embedding of outline coordinates. Colours represent {}'.format(label_meaning))
     else:
         for _m, _x, _y in zip(markers, X_embedded[:,0], X_embedded[:,1]):
             scatterplot = ax.scatter(_x, _y, marker=_m, s=500, c='#FFFFFF', edgecolors='#1f77b4')
@@ -290,12 +293,13 @@ def pca_then_t_sne(data, labels=None, label_meaning=None, nr_components=50):
     query_weight.T
     X_embedded = tsne.fit_transform(query_weight.T)
     markers = [path.Path(leaf[:,:2]) for leaf in data]
-    max_color = max(labels)
-    cmap = cm.get_cmap('rainbow')
-    colours = cmap((labels/max_color))
+    if labels is not None:
+        max_color = max(labels)
+        cmap = cm.get_cmap('rainbow')
+        colours = cmap((labels/max_color))
 
     fig, ax = plt.subplots()
-    ax.set_title('t-SNE performed on PCA feature vectors')
+    ax.set_title('t-SNE embedding of leaf shape feature vectors after PCA')
     if labels is not None:
         for i, _m, _x, _y in zip(range(len(markers)), markers, X_embedded[:,0], X_embedded[:,1]):
             scatterplot = ax.scatter(_x, _y, marker=_m, s=500, c='#FFFFFF', edgecolors=colours[i].reshape(1,-1))
@@ -303,7 +307,7 @@ def pca_then_t_sne(data, labels=None, label_meaning=None, nr_components=50):
         legend1 = ax.legend(np.unique(labels, axis = 0), labelcolor=cmap((np.unique(labels, axis = 0)/max_color)), ncol=2, markerscale=0)
         ax.add_artist(legend1)
         if label_meaning is not None:
-            ax.set_title('t-SNE performed on PCA feature vectors. Colours represent {}'.format(label_meaning))
+            ax.set_title('t-SNE embedding of leaf shape feature vectors after PCA. Colours represent {}'.format(label_meaning))
     else:
         for _m, _x, _y in zip(markers, X_embedded[:,0], X_embedded[:,1]):
             scatterplot = ax.scatter(_x, _y, marker=_m, s=500, c='#FFFFFF', edgecolors='#1f77b4')
@@ -373,9 +377,10 @@ if __name__== "__main__":
     #plot_3_components(train_ds, pca, labels = train_labels)
     #plot_2_components(train_ds, pca, labels = train_labels, components = [0,1])
 
-    #t_sne(train_ds, train_labels[:,2], label_meaning='leaf number')
-    #pca_then_t_sne(train_ds, train_labels[:,2], label_meaning='leaf number')
-
-    #t_sne(single_plant_leaves, single_plant_labels[:,2], label_meaning='leaf number')
-    #pca_then_t_sne(single_plant_leaves, single_plant_labels[:,2], label_meaning='leaf number')
+    # t_sne(train_ds, train_labels[:,2], label_meaning='leaf number')
+    # pca_then_t_sne(train_ds, train_labels[:,2], label_meaning='leaf number')
+    #t_sne(train_ds, label_meaning='leaf number')
+    #pca_then_t_sne(train_ds, label_meaning='leaf number')
+    t_sne(single_plant_leaves, single_plant_labels[:,2], label_meaning='leaf number')
+    pca_then_t_sne(single_plant_leaves, single_plant_labels[:,2], label_meaning='leaf number')
     #analyse_feature_space_clusters(train_ds, train_labels, pca)
