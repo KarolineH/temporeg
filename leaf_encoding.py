@@ -21,10 +21,12 @@ def load_inputs(dir):
 
 def get_labels(file_names):
     '''
-    IDs are Plant, Timestep, and Leaf
+    IDs are Plant, Timestep, Day number, and Leaf number
     Note that Leaf Numbers are only consistent within the same plant
+    Day number refers to the actual day after recording started
+    Timestep is the continuous count of available timesteps loaded (for example when excluding non-labelled steps)
     '''
-    ids = np.asarray([[''.join([letter for letter in word if letter.isnumeric()]) for word in name.split('_')[:3]]for name in file_names], dtype='int')
+    ids = np.asarray([[''.join([letter for letter in word if letter.isnumeric()]) for word in name.split('_')[:4]]for name in file_names], dtype='int')
     return ids
 
 def standardise_pc_scale(data):
@@ -67,7 +69,7 @@ def split_dataset(data, labels, split = 0.2):
     train_labels = np.delete(labels, indeces, axis=0)
     return train_data, test_data, train_labels, test_labels
 
-def select_subset(data, labels, plant_nr=None, timestep=None, leaf=None):
+def select_subset(data, labels, plant_nr=None, timestep=None, day=None, leaf=None):
     subset = copy.deepcopy(data)
     sublabels = copy.deepcopy(labels)
 
@@ -77,9 +79,12 @@ def select_subset(data, labels, plant_nr=None, timestep=None, leaf=None):
     if timestep is not None:
         subset = subset[np.argwhere(sublabels[:,1]==timestep).flatten(),:]
         sublabels = sublabels[np.argwhere(sublabels[:,1]==timestep).flatten(),:]
+    if day is not None:
+        subset = subset[np.argwhere(sublabels[:,2]==day).flatten(),:]
+        sublabels = sublabels[np.argwhere(sublabels[:,2]==day).flatten(),:]
     if leaf is not None:
-        subset = subset[np.argwhere(sublabels[:,2]==leaf).flatten(),:]
-        sublabels = sublabels[np.argwhere(sublabels[:,2]==leaf).flatten(),:]
+        subset = subset[np.argwhere(sublabels[:,3]==leaf).flatten(),:]
+        sublabels = sublabels[np.argwhere(sublabels[:,3]==leaf).flatten(),:]
     return subset, sublabels
 
 def compress(query, components, pca):
@@ -174,7 +179,7 @@ def plot_3_components(data, pca, labels=None):
     # Plot with regular markers using labels as colours
     ax = plt.figure(figsize=(16,10)).gca(projection='3d')
     if labels is not None:
-        scatterplot = ax.scatter(xs=transformed[:,0], ys=transformed[:,1], zs=transformed[:,2],c=labels[:flat_data.shape[0],2], cmap='rainbow')
+        scatterplot = ax.scatter(xs=transformed[:,0], ys=transformed[:,1], zs=transformed[:,2],c=labels[:flat_data.shape[0],3], cmap='rainbow')
         ax.set_xlabel('first component')
         ax.set_ylabel('second component')
         ax.set_zlabel('third component')
@@ -206,7 +211,7 @@ def plot_2_components(data, pca, labels=None, components=[0,1]):
     # Plot with regular markers using labels as colours
     fig, ax = plt.subplots()
     if labels is not None:
-        scatterplot = ax.scatter(transformed[:,components[0]], transformed[:,components[1]],c=labels[:flat_data.shape[0],2], cmap='rainbow')
+        scatterplot = ax.scatter(transformed[:,components[0]], transformed[:,components[1]],c=labels[:flat_data.shape[0],3], cmap='rainbow')
         ax.set_xlabel('component {}'.format(components[0]))
         ax.set_ylabel('component {}'.format(components[1]))
         legend1 = ax.legend(*scatterplot.legend_elements(), title="Classes")
@@ -369,7 +374,7 @@ if __name__== "__main__":
 
     #plot_explained_variance(pca)
     #test_reprojection_loss(train_ds, pca)
-    #perform_single_reprojection(train_ds[0], pca, components = 50, draw=True)
+    perform_single_reprojection(train_ds[0], pca, components = 50, draw=True)
     #ranges = new_random_leaf_from_distribution(train_ds, train_labels, pca)
     #recreate_artefact(train_ds, pca)
 
@@ -377,10 +382,10 @@ if __name__== "__main__":
     #plot_3_components(train_ds, pca, labels = train_labels)
     #plot_2_components(train_ds, pca, labels = train_labels, components = [0,1])
 
-    # t_sne(train_ds, train_labels[:,2], label_meaning='leaf number')
-    # pca_then_t_sne(train_ds, train_labels[:,2], label_meaning='leaf number')
+    # t_sne(train_ds, train_labels[:,3], label_meaning='leaf number')
+    # pca_then_t_sne(train_ds, train_labels[:,3], label_meaning='leaf number')
     #t_sne(train_ds, label_meaning='leaf number')
     #pca_then_t_sne(train_ds, label_meaning='leaf number')
-    t_sne(single_plant_leaves, single_plant_labels[:,2], label_meaning='leaf number')
-    pca_then_t_sne(single_plant_leaves, single_plant_labels[:,2], label_meaning='leaf number')
+    t_sne(single_plant_leaves, single_plant_labels[:,3], label_meaning='leaf number')
+    pca_then_t_sne(single_plant_leaves, single_plant_labels[:,3], label_meaning='leaf number')
     #analyse_feature_space_clusters(train_ds, train_labels, pca)

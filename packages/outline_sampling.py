@@ -40,7 +40,9 @@ def order_outline(vertices, edges):
     sort_edges = []
     #starting_idx = np.argmin(np.linalg.norm(vertices, axis=1)) # start with the point closest to 0 which is the leaf centroid
     ''' Starting point is the lowest point in y-direction'''
-    south_most_points = np.where(vertices[:,1] == vertices[:,1].min())
+    #south_most_points = np.where(vertices[:,1] == vertices[:,1].min())
+    south_most_points = np.where(vertices[:,1] == vertices[:,1].max())
+
     if len(south_most_points) > 1:
         starting_idx = int(south_most_points[np.argmin(vertices[south_most_points,0])]) # lowest in x-direction too if there are multiple
     else:

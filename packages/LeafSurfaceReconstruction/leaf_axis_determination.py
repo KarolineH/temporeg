@@ -1,12 +1,9 @@
 import sys
-
 import numpy as np
 from copy import copy
-
 import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 from concurrent.futures import ProcessPoolExecutor, as_completed
-
 from .helper_functions import *
 
 def surface_area_calculation(l_axis, d_axis, bins, bin_range, p_init, i):
@@ -61,6 +58,7 @@ class LeafAxisDetermination(object):
             component_3 = -1.0 * component_3
             print("Component 1 has been reversed.")
 
+        # Flips the 3rd axes (z-direction) the same way around for all leaves. Doesn't need a specific reference plane.
         check_component_3_radian = calculate_radian(np.array([0.0, 0.0, 1.0]), component_3)
         if check_component_3_radian >= np.pi / 2.0:
             component_2 = -1.0 * component_2

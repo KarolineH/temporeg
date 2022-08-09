@@ -5,6 +5,7 @@ from scipy.optimize import linear_sum_assignment
 import matplotlib.pyplot as plt
 import leaf_encoding
 import visualise
+import packages.pheno4d_util as util
 
 def plot_feature_space_distance_histogram(same_leaf_distances, different_leaf_distances):
     fig, axs = plt.subplots(2, 1, tight_layout=True)
@@ -36,8 +37,8 @@ def fs_distances_between_steps(data, labels, pca):
             before, before_labels = leaf_encoding.select_subset(query_weight.T, train_labels, plant_nr = plant, timestep=time_step, leaf=None)
             after, after_labels = leaf_encoding.select_subset(query_weight.T, train_labels, plant_nr = plant, timestep=(time_step+1), leaf=None)
             dist = distance_matrix(before, after)
-            leaf_nr_before = before_labels[:,2]
-            leaf_nr_after = after_labels[:,2]
+            leaf_nr_before = before_labels[:,3]
+            leaf_nr_after = after_labels[:,3]
 
             for i,leaf in enumerate(np.unique(leaf_nr_before)):
                 m = np.argwhere(leaf_nr_after == leaf).flatten()
@@ -70,11 +71,10 @@ def vis_compare_fs_distance(data, labels, pca):
     all_eigenleaves = pca.components_
     nr_components = 500
 
-    sorted_data = data[np.lexsort((labels[:,2], labels[:,1],labels[:,0])),:]
-    sorted_labels = labels[np.lexsort((labels[:,2], labels[:,1],labels[:,0])),:]
+    sorted_data, sorted_labels = util.sort(data, labels)
 
     for plant in np.unique(labels[:,0]):
-        for leaf in np.unique(labels[:,2]):
+        for leaf in np.unique(labels[:,3]):
             subset, sub_labels = leaf_encoding.select_subset(sorted_data, sorted_labels, plant_nr = plant, leaf=leaf)
             subset2, sub_labels2 = leaf_encoding.select_subset(sorted_data, sorted_labels, plant_nr = plant, leaf=leaf+1)
             #show dist matrix as heatmap
@@ -118,8 +118,8 @@ if __name__== "__main__":
     train_ds, test_ds, train_labels, test_labels, pca, transformed = leaf_encoding.get_encoding(train_split=0, dir=directory)
 
     # sort
-    labels = train_labels[np.lexsort((train_labels[:,2], train_labels[:,1],train_labels[:,0])),:]
-    data = train_ds[np.lexsort((train_labels[:,2], train_labels[:,1],train_labels[:,0])),:]
+    labels = train_labels[np.lexsort((train_labels[:,3], train_labels[:,1],train_labels[:,0])),:]
+    data = train_ds[np.lexsort((train_labels[:,3], train_labels[:,1],train_labels[:,0])),:]
 
     #vis_compare_fs_distance(data, labels, pca)
     dist = fs_distance_matrix(data, labels, pca)

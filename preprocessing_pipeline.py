@@ -11,14 +11,15 @@ from packages import outline_sampling
 # inputs
 raw_data_directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D')
 aligned_leaf_directory = os.path.join(raw_data_directory, '_processed', 'aligned')
+transform_log_dir = os.path.join(raw_data_directory, '_processed', 'transform_log')
 z_smoothed_directory = os.path.join(raw_data_directory, '_processed', 'z_smoothed')
 mesh_directory = os.path.join(raw_data_directory, '_processed', 'meshed')
 outline_directory = os.path.join(raw_data_directory, '_processed', 'outline')
-pca_input_directory = os.path.join(raw_data_directory, '_processed', 'pca_input')
+pca_input_directory = os.path.join(raw_data_directory, '_processed', 'pca_input_maxtest')
 
 # alignment of leaves
 plants = leaf_alignment.find_plant_locations(raw_data_directory)
-leaf_alignment.isolate_and_align_leaves(plants, aligned_leaf_directory) # isolate and align leaves, save to file
+leaf_alignment.isolate_and_align_leaves(plants, aligned_leaf_directory, transform_log_dir) # isolate and align leaves, save to file
 
 # z smoothing
 z_smoothing_operation(aligned_leaf_directory, z_smoothed_directory, radius=1.2, smoothIterations=8, smoothFactor=0.2)
@@ -29,7 +30,7 @@ pc_to_mesh.mesh_and_smooth(z_smoothed_directory, mesh_directory, maxLength=1, sm
 # extracting the outline (using Blender)
 if not os.path.exists(outline_directory):
     os.makedirs(outline_directory)
-command_string = 'blender --background --python boundary_extraction.py -- ' + str(mesh_directory) + ' ' + str(outline_directory)
+command_string = 'blender --background --python packages/boundary_extraction.py -- ' + str(mesh_directory) + ' ' + str(outline_directory)
 os.system(command_string)
 
 # Sampling the pca inputs from the outline

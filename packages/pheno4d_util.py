@@ -130,18 +130,17 @@ def compare_visual(cloud1, labels1, cloud2, labels2):
     vis2.destroy_window()
 
 def split_into_organs(points, labels):
-    #center the point cloud around the origin BEFORE splitting, retain relative global pose for the components
-    #for dimension in range(points.shape[1]):
-        #points[:,dimension] = points[:,dimension] - (min(points[:,dimension] + (max(points[:,dimension])-min(points[:,dimension]))/2))
-
     # Splitting the point cloud into sub-clouds for each unique label
     organs = []
     for label in np.unique(labels).astype(int):
         organs.append((points[(labels.astype(int).flatten()==label),:], labels[(labels.astype(int).flatten()==label),:]))
-
-    # for organ in organs:
-    #     vis = util.draw_cloud(organ[0], organ[1], draw=True)
     return organs
+
+def sort_examples(in_data, in_labels):
+    # sort
+    out_labels = in_labels[np.lexsort((in_labels[:,3], in_labels[:,1],in_labels[:,0])),:]
+    out_data = in_data[np.lexsort((in_labels[:,3], in_labels[:,1],in_labels[:,0])),:]
+    return out_data, out_labels
 
 if __name__ == "__main__":
     data_directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D')
