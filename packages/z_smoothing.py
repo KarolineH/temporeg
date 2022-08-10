@@ -11,7 +11,7 @@ def z_smoothing_operation(in_dir, out_dir, radius=1.2, smoothIterations=8, smoot
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)
 
-    leaf_clouds = os.listdir(in_dir)
+    leaf_clouds = sorted(os.listdir(in_dir))
     done = os.listdir(out_dir)
     for leaf in leaf_clouds:
         in_file = os.path.join(in_dir, leaf)
@@ -41,8 +41,8 @@ def smoothing(cloud, radius=1.2, smoothIterations=8, smoothFactor=0.2):
         z_push_vectors = np.asarray([np.mean((smoothed_cloud[query,2]-smoothed_cloud[j,2])) for j,query in enumerate(ind)])
         smoothed_z = smoothed_cloud[:,2] + (smoothFactor*z_push_vectors)
         smoothed_cloud[:,2] = smoothed_z
-
-    tree = None
+        del(tree)
+        del(ind)
     return smoothed_cloud
 
 if __name__ == "__main__":

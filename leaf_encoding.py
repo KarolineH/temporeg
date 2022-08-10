@@ -29,6 +29,37 @@ def get_labels(file_names):
     ids = np.asarray([[''.join([letter for letter in word if letter.isnumeric()]) for word in name.split('_')[:4]]for name in file_names], dtype='int')
     return ids
 
+def add_scale_location_rotation(data, location=False, rotation=False, scale=False):
+    # the loaded data from pca_inputs are in leaf centroid coordinate frame, which aligned axes, and not normalised by outline length
+
+    if location:
+        pass
+        # translate back to plant emergence point as origin
+    else:
+        for loop in data:
+            loop - loop[0,:]
+
+        pass
+        # translate to starting point as origin
+
+        if not scale:
+            #normalise by total outline length
+            shifted_loop = np.append(loop, [loop[0]], axis=0)
+            shifted_loop = np.delete(shifted_loop, (0), axis=0)
+
+            edge_vectors = shifted_loop-loop # vectors from point to point along the loop
+            vector_length = np.linalg.norm(edge_vectors, axis=1)
+            cumulative_edges = np.cumsum(vector_length) #get the cumulative distance from start to each point
+            total_length = cumulative_edges[-1]
+            import pdb; pdb.set_trace()
+            normalised_points = loop/total_length
+
+    if rotation:
+        pass
+        # rotate back to original recording frame, or even soil plane
+
+
+
 def standardise_pc_scale(data):
     '''
     Standardises all point clouds to values between 0 and 1
@@ -368,8 +399,11 @@ def recreate_artefact(data, pca):
     import pdb; pdb.set_trace()
 
 if __name__== "__main__":
-    dir = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'pca_input')
+    dir = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'pca_input_maxtest')
+
     train_ds, test_ds, train_labels, test_labels, pca, transformed = get_encoding(0, dir)
+    add_scale_location_rotation(train_ds, location=False, rotation=False, scale=False)
+
     single_plant_leaves, single_plant_labels= select_subset(train_ds, train_labels, plant_nr = 6)
 
     #plot_explained_variance(pca)

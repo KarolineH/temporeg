@@ -117,9 +117,8 @@ if __name__== "__main__":
     directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'pca_input')
     train_ds, test_ds, train_labels, test_labels, pca, transformed = leaf_encoding.get_encoding(train_split=0, dir=directory)
 
-    # sort
-    labels = train_labels[np.lexsort((train_labels[:,3], train_labels[:,1],train_labels[:,0])),:]
-    data = train_ds[np.lexsort((train_labels[:,3], train_labels[:,1],train_labels[:,0])),:]
+    #sort
+    data, labels = util.sort(train_ds, train_labels)
 
     #vis_compare_fs_distance(data, labels, pca)
     dist = fs_distance_matrix(data, labels, pca)

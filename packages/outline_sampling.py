@@ -1,7 +1,7 @@
 import os
 import numpy as np
 
-def sampling_pca_input(in_dir, out_dir, normalise=True, n=200):
+def sampling_pca_input(in_dir, out_dir, normalise=False, n=200):
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)
 
@@ -15,6 +15,9 @@ def sampling_pca_input(in_dir, out_dir, normalise=True, n=200):
             loop = order_outline(vertices, edges)
             if loop is not None:
                 points, normalised_points = uniformly_sample_loop(loop, n)
+
+                # save to file
+                # note that all outlines are in centroid leaf coordinate frame
                 if normalise:
                     save_outline_to_file(normalised_points, file_names[i], out_dir)
                 else:
@@ -39,14 +42,14 @@ def order_outline(vertices, edges):
     loop = None
     sort_edges = []
     #starting_idx = np.argmin(np.linalg.norm(vertices, axis=1)) # start with the point closest to 0 which is the leaf centroid
-    ''' Starting point is the lowest point in y-direction'''
+    ''' Starting point is the highest point in y-direction'''
     #south_most_points = np.where(vertices[:,1] == vertices[:,1].min())
-    south_most_points = np.where(vertices[:,1] == vertices[:,1].max())
+    tip_points = np.where(vertices[:,1] == vertices[:,1].max())
 
-    if len(south_most_points) > 1:
-        starting_idx = int(south_most_points[np.argmin(vertices[south_most_points,0])]) # lowest in x-direction too if there are multiple
+    if len(tip_points) > 1:
+        starting_idx = int(tip_points[np.argmin(vertices[tip_points,0])]) # lowest in x-direction too if there are multiple
     else:
-        starting_idx = int(south_most_points[0])
+        starting_idx = int(tip_points[0])
 
     doneidxs = [starting_idx]
     curridx = starting_idx
@@ -72,10 +75,6 @@ def order_outline(vertices, edges):
         loop = vertices[vertex_order,:]
         loop = loop - loop[0,:] # Transform all points with respect to the first point at [0,0,0]
     return loop
-
-def check_clockwise(edge_vectors):
-    pass
-
 
 def uniformly_sample_loop(loop, n=200):
     shifted_loop = np.append(loop, [loop[0]], axis=0)
@@ -115,4 +114,4 @@ def save_outline_to_file(points, file_name, out_dir):
 if __name__== "__main__":
     in_dir = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'outline')
     out_dir = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'pca_input')
-    sampling_pca_input(in_dir, out_dir, normalise=True)
+    sampling_pca_input(in_dir, out_dir, normalise=False)
