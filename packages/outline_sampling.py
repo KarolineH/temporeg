@@ -73,7 +73,7 @@ def order_outline(vertices, edges):
         sort_edges.append([sort_edges[-1][-1], sort_edges[0][0]])
         vertex_order = np.array(sort_edges)[:,0]
         loop = vertices[vertex_order,:]
-        loop = loop - loop[0,:] # Transform all points with respect to the first point at [0,0,0]
+        #loop = loop - loop[0,:] # Transform all points with respect to the first point at [0,0,0]
     return loop
 
 def uniformly_sample_loop(loop, n=200):

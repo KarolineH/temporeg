@@ -83,6 +83,8 @@ def get_single_match_my_method(before, before_labels, after, after_labels):
     # remove leaves in the before set, that have no match in the after set
     trimmed_before = np.delete(before, np.where(np.isin(before_labels[:,-1], after_labels[:,-1]) == False), axis = 0)
     trimmed_before_labels = np.delete(before_labels, np.where(np.isin(before_labels[:,-1], after_labels[:,-1]) == False), axis=0)
+    #trimmed_before = before
+    #trimmed_before_labels = before_labels
 
     # get the distance matrix for each pre-post leaf pairing
     dist = organ_matching.make_dist_matrix(trimmed_before, after, pca, draw=False, components=200)
@@ -120,10 +122,10 @@ if __name__== "__main__":
     # Load data for bonn method
     directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'transform_log')
     data, labels = get_location_info(directory)
-    get_score_across_dataset(data, labels, plotting=False, bonn_method=True)
+    #get_score_across_dataset(data, labels, plotting=False, bonn_method=True)
 
     # Load data for my pca method
-    directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'pca_input_maxtest')
-    train_ds, test_ds, train_labels, test_labels, pca, transformed = leaf_encoding.get_encoding(train_split=0, dir=directory)
+    directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'pca_input')
+    train_ds, test_ds, train_labels, test_labels, pca, transformed = leaf_encoding.get_encoding(train_split=0, dir=directory, location=False, rotation=False, scale=False)
     data, labels = util.sort_examples(train_ds, train_labels)
     get_score_across_dataset(data, labels, plotting=False, bonn_method=False)

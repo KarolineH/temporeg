@@ -9,6 +9,9 @@ import copy
 import matplotlib.path as path
 import matplotlib.cm as cm
 from sklearn.cluster import KMeans
+import bonn_leaf_matching
+import packages.pheno4d_util as util
+from packages.LeafSurfaceReconstruction import helper_functions
 
 '''
 ENCODING and utilities
@@ -29,21 +32,61 @@ def get_labels(file_names):
     ids = np.asarray([[''.join([letter for letter in word if letter.isnumeric()]) for word in name.split('_')[:4]]for name in file_names], dtype='int')
     return ids
 
-def add_scale_location_rotation(data, location=False, rotation=False, scale=False):
+def add_scale_location_rotation(data, labels, location=False, rotation=False, scale=False):
     # the loaded data from pca_inputs are in leaf centroid coordinate frame, which aligned axes, and not normalised by outline length
 
-    if location:
-        pass
-        # translate back to plant emergence point as origin
+    sorted_data, sorted_labels = util.sort_examples(data, labels)  # has scale, but no location or rotation info
+
+    if rotation:
+        # rotate back to original recording frame
+        directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'transform_log')
+        log_files = os.listdir(directory)
+        logs = np.asarray([np.load(os.path.join(directory, leaf)) for leaf in log_files])
+        axes = logs[:,1:,:]
+        log_labels = get_labels(log_files)
+        sorted_axes, sorted_axes_labels = util.sort_examples(axes, log_labels)
+        # find the same leaves in both data sets
+
+        indeces = np.asarray([np.argwhere((sorted_axes_labels == leaf).all(axis=1)) for leaf in sorted_labels]).flatten()
+        original_target_axes = sorted_axes[indeces,:,:]
+
+        #rotate back
+        rotated_outlines = []
+        for i,leaf_rotation in enumerate(original_target_axes):
+            # Get the zero axes (the coordinate frame at recording time) w.r.t the leaf's specific aligned coordinate system
+            cloud_rotated = helper_functions.transform_axis_pointcloud(sorted_data[i], leaf_rotation.T[0], leaf_rotation.T[1], leaf_rotation.T[2])
+            rotated_outlines.append(cloud_rotated)
+
+            # Adapted from https://stackoverflow.com/questions/55082928/change-of-basis-in-numpy
+            # vec_new = np.linalg.inv(original_axes[0].T).dot(vec_old)
+
+        rotated_data = np.asarray(rotated_outlines)
     else:
-        for loop in data:
-            loop - loop[0,:]
+        rotated_data = sorted_data
 
-        pass
-        # translate to starting point as origin
+    if location:
+        # shift back to centroid as origin, then back to plant emergence point below
+        #data_wrt_centroid = np.asarray([loop + offsets_from_centroid[i,:] for i,loop in enumerate(rotated_data)])
+        data_wrt_centroid = rotated_data
 
-        if not scale:
-            #normalise by total outline length
+        # get the leaf centroid info with respec to the in plant emergence point
+        directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'transform_log')
+        locations, location_labels = bonn_leaf_matching.get_location_info(directory)
+        sorted_centroids, sorted_centroid_labels = util.sort_examples(locations, location_labels)
+        # find the same leaves in both data sets
+        indeces = np.asarray([np.argwhere((sorted_centroid_labels == leaf).all(axis=1)) for leaf in sorted_labels]).flatten()
+        # shift the leaf point clouds back to their centroid in global frame
+        shift_vectors = sorted_centroids[indeces,:]
+        #shifted_labels = sorted_centroid_labels[indeces,:] #only for verification
+        # translate back to plant emergence point as origin
+        located_data = np.asarray([data_wrt_centroid[i] + vector for i,vector in enumerate(shift_vectors)])
+    else:
+        located_data = rotated_data
+
+    if not scale:
+        #Normalise by total outline length
+        normalised_loops = []
+        for loop in located_data:
             shifted_loop = np.append(loop, [loop[0]], axis=0)
             shifted_loop = np.delete(shifted_loop, (0), axis=0)
 
@@ -51,13 +94,20 @@ def add_scale_location_rotation(data, location=False, rotation=False, scale=Fals
             vector_length = np.linalg.norm(edge_vectors, axis=1)
             cumulative_edges = np.cumsum(vector_length) #get the cumulative distance from start to each point
             total_length = cumulative_edges[-1]
-            import pdb; pdb.set_trace()
             normalised_points = loop/total_length
+            normalised_loops.append(normalised_points)
+        scaled_data = np.asarray(normalised_loops)
+    else:
+        scaled_data=located_data
 
-    if rotation:
-        pass
-        # rotate back to original recording frame, or even soil plane
+    # Lastly, translate to outline starting point as origin. But only if no location is wanted
+    if not location:
+        offsets_from_centroid = scaled_data[:,0,:]
+        out_data = np.asarray([loop - loop[0,:] for loop in scaled_data])
+    else:
+        out_data = scaled_data
 
+    return out_data, sorted_labels
 
 
 def standardise_pc_scale(data):
@@ -126,16 +176,20 @@ def decompress(weights, components, pca):
     projection = weights.T @ components + pca.mean_ # decompress
     return projection
 
-def get_encoding(train_split=0, dir=None):
+def get_encoding(train_split=0, dir=None, location=False, rotation=False, scale=False):
     if dir is None:
         dir = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'pca_input')
-    data, names = load_inputs(dir)
+    data, names = load_inputs(dir) # at this stage they are in local frame, with centroid as origin, but the scale is still not normalised
     labels = get_labels(names)
     #standardised, scalar = standardise_pc_scale(data)
     train_ds, test_ds, train_labels, test_labels = split_dataset(data, labels, split=train_split)
-    pca, transformed = fit_pca(data)
-    return train_ds, test_ds, train_labels, test_labels, pca, transformed
 
+    train_ds, train_labels = add_scale_location_rotation(train_ds, train_labels, location, rotation, scale)
+    if test_ds.size > 0:
+        test_ds, test_labels = add_scale_location_rotation(test_ds, test_labels, location, rotation, scale)
+
+    pca, transformed = fit_pca(train_ds)
+    return train_ds, test_ds, train_labels, test_labels, pca, transformed
 
 '''
 TESTING and plotting
@@ -399,10 +453,9 @@ def recreate_artefact(data, pca):
     import pdb; pdb.set_trace()
 
 if __name__== "__main__":
-    dir = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'pca_input_maxtest')
+    dir = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'pca_input')
 
-    train_ds, test_ds, train_labels, test_labels, pca, transformed = get_encoding(0, dir)
-    add_scale_location_rotation(train_ds, location=False, rotation=False, scale=False)
+    train_ds, test_ds, train_labels, test_labels, pca, transformed = get_encoding(0, dir, location=False, rotation=True, scale=True)
 
     single_plant_leaves, single_plant_labels= select_subset(train_ds, train_labels, plant_nr = 6)
 
