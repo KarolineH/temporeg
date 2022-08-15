@@ -33,7 +33,8 @@ def get_labels(file_names):
     return ids
 
 def add_scale_location_rotation(data, labels, location=False, rotation=False, scale=False):
-    # the loaded data from pca_inputs are in leaf centroid coordinate frame, which aligned axes, and not normalised by outline length
+    # the loaded data from pca_inputs are in leaf centroid coordinate frame
+    # which aligned axes (along the largest spread), and not normalised by outline length
 
     sorted_data, sorted_labels = util.sort_examples(data, labels)  # has scale, but no location or rotation info
 
@@ -56,37 +57,17 @@ def add_scale_location_rotation(data, labels, location=False, rotation=False, sc
             # Get the zero axes (the coordinate frame at recording time) w.r.t the leaf's specific aligned coordinate system
             cloud_rotated = helper_functions.transform_axis_pointcloud(sorted_data[i], leaf_rotation.T[0], leaf_rotation.T[1], leaf_rotation.T[2])
             rotated_outlines.append(cloud_rotated)
-
             # Adapted from https://stackoverflow.com/questions/55082928/change-of-basis-in-numpy
             # vec_new = np.linalg.inv(original_axes[0].T).dot(vec_old)
-
         rotated_data = np.asarray(rotated_outlines)
     else:
         rotated_data = sorted_data
 
-    if location:
-        # shift back to centroid as origin, then back to plant emergence point below
-        #data_wrt_centroid = np.asarray([loop + offsets_from_centroid[i,:] for i,loop in enumerate(rotated_data)])
-        data_wrt_centroid = rotated_data
-
-        # get the leaf centroid info with respec to the in plant emergence point
-        directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'transform_log')
-        locations, location_labels = bonn_leaf_matching.get_location_info(directory)
-        sorted_centroids, sorted_centroid_labels = util.sort_examples(locations, location_labels)
-        # find the same leaves in both data sets
-        indeces = np.asarray([np.argwhere((sorted_centroid_labels == leaf).all(axis=1)) for leaf in sorted_labels]).flatten()
-        # shift the leaf point clouds back to their centroid in global frame
-        shift_vectors = sorted_centroids[indeces,:]
-        #shifted_labels = sorted_centroid_labels[indeces,:] #only for verification
-        # translate back to plant emergence point as origin
-        located_data = np.asarray([data_wrt_centroid[i] + vector for i,vector in enumerate(shift_vectors)])
-    else:
-        located_data = rotated_data
-
     if not scale:
+        #scaling happens in centroid reference frame, so around the centroid. Doing this in global frame distorts global locations!
         #Normalise by total outline length
         normalised_loops = []
-        for loop in located_data:
+        for loop in rotated_data:
             shifted_loop = np.append(loop, [loop[0]], axis=0)
             shifted_loop = np.delete(shifted_loop, (0), axis=0)
 
@@ -98,14 +79,32 @@ def add_scale_location_rotation(data, labels, location=False, rotation=False, sc
             normalised_loops.append(normalised_points)
         scaled_data = np.asarray(normalised_loops)
     else:
-        scaled_data=located_data
+        scaled_data=rotated_data
+
+    if location:
+        # shift back from leaf centroid to the plant emergence point as origin
+        data_wrt_centroid = scaled_data # at this point the data is already expressed w.r.t. the leaf centroid
+
+        # get the leaf centroid info with respect to the plant emergence point
+        directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'transform_log')
+        locations, location_labels = bonn_leaf_matching.get_location_info(directory)
+        sorted_centroids, sorted_centroid_labels = util.sort_examples(locations, location_labels)
+        # find the same leaves in both data sets
+        indeces = np.asarray([np.argwhere((sorted_centroid_labels == leaf).all(axis=1)) for leaf in sorted_labels]).flatten()
+        # shift the leaf point clouds back to their centroid in global frame
+        shift_vectors = sorted_centroids[indeces,:]
+        #shifted_labels = sorted_centroid_labels[indeces,:] #only for verification
+        # translate back to plant emergence point as origin
+        located_data = np.asarray([data_wrt_centroid[i] + vector for i,vector in enumerate(shift_vectors)])
+    else:
+        located_data = scaled_data
 
     # Lastly, translate to outline starting point as origin. But only if no location is wanted
     if not location:
-        offsets_from_centroid = scaled_data[:,0,:]
-        out_data = np.asarray([loop - loop[0,:] for loop in scaled_data])
+        offsets_from_centroid = located_data[:,0,:]
+        out_data = np.asarray([loop - loop[0,:] for loop in located_data])
     else:
-        out_data = scaled_data
+        out_data = located_data
 
     return out_data, sorted_labels
 
