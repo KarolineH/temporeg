@@ -18,14 +18,8 @@ def get_location_info(directory):
 
     #Extract the labels from the file names, which allows for sorting and looping over the time steps.
     labels = leaf_encoding.get_labels(log_files)
-    sorted_data, sorted_labels = util.sort_examples(centroids, labels)
-    return sorted_data, sorted_labels
-
-def get_shape_info(directory):
-    if directory is None:
-        directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'pca_input')
-    train_ds, test_ds, train_labels, test_labels, pca, transformed = leaf_encoding.get_encoding(train_split=0, dir=directory)
-
+    sorted_centroids, sorted_labels = util.sort_examples(centroids, labels)
+    return sorted_centroids, sorted_labels
 
 def plot_centroids(subset1, subset2):
     # Scatterplot to verify that the centroids are correct
@@ -66,65 +60,96 @@ def plot_assignment(before, after, before_labels, after_labels, legible_matches,
         plt.title(title)
     plt.show()
 
-def get_single_match_bonn_method(before, before_labels, after, after_labels):
-    # remove leaves in the before set, that have no match in the after set
-    trimmed_before = np.delete(before, np.where(np.isin(before_labels[:,-1], after_labels[:,-1]) == False), axis = 0)
-    trimmed_before_labels = np.delete(before_labels, np.where(np.isin(before_labels[:,-1], after_labels[:,-1]) == False), axis=0)
+# def get_single_match_bonn_method(before, before_labels, after, after_labels):
+#     # remove leaves in the before set, that have no match in the after set
+#     trimmed_before = np.delete(before, np.where(np.isin(before_labels[:,-1], after_labels[:,-1]) == False), axis = 0)
+#     trimmed_before_labels = np.delete(before_labels, np.where(np.isin(before_labels[:,-1], after_labels[:,-1]) == False), axis=0)
+#
+#     # get the distance matrix for each pre-post leaf pairing
+#     dist = distance_matrix(trimmed_before, after)
+#
+#     # get assignment via Hunagrian Algorithm
+#     match, legible_matches = organ_matching.compute_assignment(dist, before_labels, after_labels)
+#     return match, legible_matches
 
-    # get the distance matrix for each pre-post leaf pairing
-    dist = distance_matrix(trimmed_before, after)
+# def get_single_match_my_method(before, before_labels, after, after_labels):
+#     # remove leaves in the before set, that have no match in the after set
+#     trimmed_before = np.delete(before, np.where(np.isin(before_labels[:,-1], after_labels[:,-1]) == False), axis = 0)
+#     trimmed_before_labels = np.delete(before_labels, np.where(np.isin(before_labels[:,-1], after_labels[:,-1]) == False), axis=0)
+#     #trimmed_before = before
+#     #trimmed_before_labels = before_labels
+#
+#     # get the distance matrix for each pre-post leaf pairing
+#     dist = organ_matching.make_dist_matrix(trimmed_before, after, pca, draw=False, components=200)
+#     match, legible_matches = organ_matching.compute_assignment(dist, before_labels, after_labels)
+#     return match, legible_matches
 
-    # get assignment via Hunagrian Algorithm
-    match, legible_matches = organ_matching.compute_assignment(dist, before_labels, after_labels)
-    return match, legible_matches
+def get_score_across_dataset(centroids, centroid_labels, outline_data, outline_labels, pca, trim_missing=True, plotting=False):
 
-def get_single_match_my_method(before, before_labels, after, after_labels):
-    # remove leaves in the before set, that have no match in the after set
-    trimmed_before = np.delete(before, np.where(np.isin(before_labels[:,-1], after_labels[:,-1]) == False), axis = 0)
-    trimmed_before_labels = np.delete(before_labels, np.where(np.isin(before_labels[:,-1], after_labels[:,-1]) == False), axis=0)
-    #trimmed_before = before
-    #trimmed_before_labels = before_labels
+    # The processed outline set potentially has fewer leaves in it than the original (centroid only) data set
+    # Find only the leaves, which are present in both for a fair comparison
+    indeces = np.asarray([np.argwhere((centroid_labels == leaf).all(axis=1)) for leaf in outline_labels]).flatten()
+    centroids = centroids[indeces,:]
+    centroid_labels = centroid_labels[indeces,:]
 
-    # get the distance matrix for each pre-post leaf pairing
-    dist = organ_matching.make_dist_matrix(trimmed_before, after, pca, draw=False, components=200)
-    match, legible_matches = organ_matching.compute_assignment(dist, before_labels, after_labels)
-    return match, legible_matches
-
-def get_score_across_dataset(sorted_data, sorted_labels, plotting=False, bonn_method=False):
-    # Loop over all pairs of time steps, evaluate with the Bonn method, get score
-    count = 0
+    # Loop over all pairs of time steps
+    bonn_count = 0
+    our_count = 0
     total = 0
-    for plant in np.unique(sorted_labels[:,0]):
-        for time_step in range(np.unique(sorted_labels[:,1]).size-1):
-            # select the subset to compare
-            before, before_labels = leaf_encoding.select_subset(sorted_data, sorted_labels, plant_nr = plant, timestep=time_step, day=None, leaf=None)
-            after, after_labels = leaf_encoding.select_subset(sorted_data, sorted_labels, plant_nr = plant, timestep=time_step+1, day=None, leaf=None)
+    for plant in np.unique(outline_labels[:,0]): # for each plant
+        for time_step in range(np.unique(outline_labels[:,1]).size-1): # and for each time step available in the processed data
 
-            # perform pairing
-            if bonn_method:
-                match, legible_matches = get_single_match_bonn_method(before, before_labels, after, after_labels)
-            else:
-                match, legible_matches = get_single_match_my_method(before, before_labels, after, after_labels)
+            # select the subsets to compare
+            c_before, c_before_labels = leaf_encoding.select_subset(centroids, centroid_labels, plant_nr = plant, timestep=time_step, day=None, leaf=None)
+            c_after, c_after_labels = leaf_encoding.select_subset(centroids, centroid_labels, plant_nr = plant, timestep=time_step+1, day=None, leaf=None)
+            o_before, o_before_labels = leaf_encoding.select_subset(outline_data, outline_labels, plant_nr = plant, timestep=time_step, day=None, leaf=None)
+            o_after, o_after_labels = leaf_encoding.select_subset(outline_data, outline_labels, plant_nr = plant, timestep=time_step+1, day=None, leaf=None)
 
-            if plotting:
-                plant_id = str(after_labels[0,:-1])
-                plot_assignment(before, after, before_labels, after_labels, legible_matches, title=plant_id)
-            # count correct assignments (true positives)
-            for pair in legible_matches:
-                    total += 1
-                    if pair[0,-1] == pair[1,-1]:
-                        count += 1
-    print(count)
-    print(total)
+            # Remove leaves that exist only in the LATER scan. The method assumes that each leaf will be present in the next time step
+            # New emerging leaves are permitted, but vanishing leaves are not expected
+            if trim_missing:
+                c_before = np.delete(c_before, np.where(np.isin(o_before_labels[:,-1], o_after_labels[:,-1]) == False), axis = 0)
+                c_before_labels = np.delete(c_before_labels, np.where(np.isin(o_before_labels[:,-1], o_after_labels[:,-1]) == False), axis=0)
+                o_before = np.delete(o_before, np.where(np.isin(o_before_labels[:,-1], o_after_labels[:,-1]) == False), axis = 0)
+                o_before_labels = np.delete(o_before_labels, np.where(np.isin(o_before_labels[:,-1], o_after_labels[:,-1]) == False), axis=0)
+
+            # Now perform the matching step using both methods
+
+            centroid_dist = distance_matrix(c_before, c_after)
+            outline_dist = organ_matching.make_dist_matrix(o_before, o_after, pca, draw=False, components=200)
+
+            c_matches = organ_matching.compute_assignment(centroid_dist, c_before_labels, c_after_labels)[1]
+            o_matches = organ_matching.compute_assignment(outline_dist, o_before_labels, o_after_labels)[1]
+
+            # if plotting:
+            #     plant_id = str(after_labels[0,:-1])
+            #     plot_assignment(before, after, before_labels, after_labels, legible_matches, title=plant_id)
+            # # count correct assignments (true positives)
+
+            for pair in range(len(c_matches)):
+                total += 1
+                if c_matches[pair][0,-1] == c_matches[pair][1,-1]:
+                    bonn_count += 1
+                if o_matches[pair][0,-1] == o_matches[pair][1,-1]:
+                    our_count += 1
+
+    print(f'Bonn (centroid) method: {bonn_count}')
+    print(f'Our (outline) method: {our_count}')
+    print(f'total: {total}')
+
+def testing_pipeline():
+    # Load data needed for Bonn method
+    directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'transform_log')
+    centroids, centroid_labels = get_location_info(directory) # already sorted
+
+    # Load data needed for my method
+    directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'pca_input')
+    train_ds, test_ds, train_labels, test_labels, pca, transformed = leaf_encoding.get_encoding(train_split=0, dir=dir, location=True, rotation=False, scale=True, as_features=False)
+
+    outline_data, outline_labels = util.sort_examples(train_ds, train_labels)
+
+    get_score_across_dataset(centroids, centroid_labels, outline_data, outline_labels, pca, trim_missing=True, plotting=False)
 
 if __name__== "__main__":
-    # Load data for bonn method
-    directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'transform_log')
-    data, labels = get_location_info(directory)
-    #get_score_across_dataset(data, labels, plotting=False, bonn_method=True)
 
-    # Load data for my pca method
-    directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'pca_input')
-    train_ds, test_ds, train_labels, test_labels, pca, transformed = leaf_encoding.get_encoding(train_split=0, dir=directory, location=True, rotation=False, scale=True)
-    data, labels = util.sort_examples(train_ds, train_labels)
-    get_score_across_dataset(data, labels, plotting=False, bonn_method=False)
+    testing_pipeline()

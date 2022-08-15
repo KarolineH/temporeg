@@ -115,7 +115,8 @@ def compute_assignment(distance_matrix, label_set_1, label_set_2):
 if __name__== "__main__":
     # Load data and fit pca
     directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'pca_input')
-    train_ds, test_ds, train_labels, test_labels, pca, transformed = leaf_encoding.get_encoding(train_split=0, dir=directory)
+    train_ds, test_ds, train_labels, test_labels, pca, transformed = leaf_encoding.get_encoding(0, dir, location=False, rotation=False, scale=False, as_features=False)
+
 
     #sort
     data, labels = util.sort(train_ds, train_labels)
