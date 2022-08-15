@@ -32,7 +32,7 @@ def get_labels(file_names):
     ids = np.asarray([[''.join([letter for letter in word if letter.isnumeric()]) for word in name.split('_')[:4]]for name in file_names], dtype='int')
     return ids
 
-def add_scale_location_rotation(data, labels, location=False, rotation=False, scale=False):
+def add_scale_location_rotation_full(data, labels, location=False, rotation=False, scale=False):
     # the loaded data from pca_inputs are in leaf centroid coordinate frame
     # which aligned axes (along the largest spread), and not normalised by outline length
 
@@ -183,9 +183,9 @@ def get_encoding(train_split=0, dir=None, location=False, rotation=False, scale=
     #standardised, scalar = standardise_pc_scale(data)
     train_ds, test_ds, train_labels, test_labels = split_dataset(data, labels, split=train_split)
 
-    train_ds, train_labels = add_scale_location_rotation(train_ds, train_labels, location, rotation, scale)
+    train_ds, train_labels = add_scale_location_rotation_full(train_ds, train_labels, location, rotation, scale)
     if test_ds.size > 0:
-        test_ds, test_labels = add_scale_location_rotation(test_ds, test_labels, location, rotation, scale)
+        test_ds, test_labels = add_scale_location_rotation_full(test_ds, test_labels, location, rotation, scale)
 
     pca, transformed = fit_pca(train_ds)
     return train_ds, test_ds, train_labels, test_labels, pca, transformed

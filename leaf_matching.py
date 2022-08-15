@@ -66,7 +66,6 @@ def plot_assignment(before, after, before_labels, after_labels, legible_matches,
         plt.title(title)
     plt.show()
 
-
 def get_single_match_bonn_method(before, before_labels, after, after_labels):
     # remove leaves in the before set, that have no match in the after set
     trimmed_before = np.delete(before, np.where(np.isin(before_labels[:,-1], after_labels[:,-1]) == False), axis = 0)
@@ -126,6 +125,6 @@ if __name__== "__main__":
 
     # Load data for my pca method
     directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'pca_input')
-    train_ds, test_ds, train_labels, test_labels, pca, transformed = leaf_encoding.get_encoding(train_split=0, dir=directory, location=False, rotation=False, scale=False)
+    train_ds, test_ds, train_labels, test_labels, pca, transformed = leaf_encoding.get_encoding(train_split=0, dir=directory, location=True, rotation=False, scale=True)
     data, labels = util.sort_examples(train_ds, train_labels)
     get_score_across_dataset(data, labels, plotting=False, bonn_method=False)
