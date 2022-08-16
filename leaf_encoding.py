@@ -48,7 +48,6 @@ def add_scale_location_rotation_as_features(data, labels, loc=False, rot=False, 
 
     return feature_vector, normalised_labels
 
-
 def add_scale_location_rotation_full(data, labels, location=False, rotation=False, scale=False):
     # the loaded data from pca_inputs are in leaf centroid coordinate frame
     # which aligned axes (along the largest spread), and not normalised by outline length
@@ -133,21 +132,6 @@ def add_scale_location_rotation_full(data, labels, location=False, rotation=Fals
 
     return out_data, sorted_labels, shift_vectors, original_target_axes, scales
 
-def standardise_pc_scale(data):
-    '''
-    Standardises all point clouds to values between 0 and 1
-    and keeps record of the single value scaling factor for each point cloud
-    '''
-    original_shape = data.shape
-    mins = np.asarray([np.min(leaf, axis=0) for leaf in data])
-    maxes = np.asarray([np.max(leaf, axis=0) for leaf in data])
-    ranges = np.asarray([np.ptp(leaf, axis=0) for leaf in data])
-    flat_data = data.reshape(data.shape[0], data.shape[1]*data.shape[2])
-    scale_factor = np.max(abs(np.concatenate((mins, maxes), axis=1)), axis=1)
-    standardised = flat_data / scale_factor[:,None]
-    out = standardised.reshape(original_shape)
-    return out, scale_factor
-
 def fit_pca(data):
     #flat_data = data.reshape(data.shape[0], data.shape[1]*data.shape[2])
     pca = PCA()
@@ -196,7 +180,8 @@ def get_encoding(train_split=0, dir=None, location=False, rotation=False, scale=
         dir = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'pca_input')
     data, names = load_inputs(dir) # at this stage they are in local frame, with centroid as origin, but the scale is still not normalised
     labels = get_labels(names)
-    #standardised, scalar = standardise_pc_scale(data)
+
+
     train_ds, test_ds, train_labels, test_labels = split_dataset(data, labels, split=train_split)
 
     if as_features:
@@ -225,7 +210,7 @@ def plot_explained_variance(pca):
     plt.xlabel('Number of principal components')
     plt.show()
 
-def perform_single_reprojection(sample, pca, components=None, draw = False):
+def perform_single_reprojection(query, pca, components=None, draw = False):
     '''
     Takes one single leaf outline (point cloud) at a time
     Encodes and decode the outline, prints the reprojection error
@@ -234,51 +219,76 @@ def perform_single_reprojection(sample, pca, components=None, draw = False):
     if components is None:
         components = pca.components_.shape[0]
 
-    original_shape = sample.shape
-    query = sample.reshape(sample.shape[0]*sample.shape[1])
+    #original_shape = sample.shape
+    #query = sample.reshape(sample.shape[0]*sample.shape[1])
+
     all_eigenleaves = pca.components_
     query_weight = compress(query, all_eigenleaves[:components], pca)
     reprojection = decompress(query_weight, all_eigenleaves[:components], pca)
-    unrolled = reprojection.reshape(original_shape) # restack
-    euclidean_dist_error = np.linalg.norm(sample-unrolled, axis = 1) # euclidean distance between each point pair
-    mean_error = euclidean_dist_error.mean()
+    #unrolled = reprojection.reshape(original_shape) # restack
+
+    single_error = query-reprojection # distance for each individual feature
+    mean_error = np.mean(single_error)
+
     print(f"Mean reprojection error at {components} components : {mean_error}")
 
     if draw:
-        cloud1 = visualise.array_to_o3d_pointcloud(sample)
-        cloud2 = visualise.array_to_o3d_pointcloud(unrolled)
+        stacked_query, query_additional_features = reshape_coordinates_and_additional_features(query, nr_coordinates=500)
+        stacked_reprojection, reprojection_additional_features = reshape_coordinates_and_additional_features(reprojection, nr_coordinates=500)
+
+        print(f'Aditional features given vs. reprojected {np.stack((query_additional_features, reprojection_additional_features))}')
+
+        cloud1 = visualise.array_to_o3d_pointcloud(stacked_query)
+        cloud2 = visualise.array_to_o3d_pointcloud(stacked_reprojection)
         visualise.draw([cloud1, cloud2], 'test', offset = True )
     return
 
-def test_reprojection_loss(sample, pca):
+def reshape_coordinates_and_additional_features(data, nr_coordinates=500):
+    # data can be 1D feature vector or 2D matrix of examples x features
+    if len(data.shape) > 1:
+        trimmed = data[:,:nr_coordinates*3]
+        stacked = trimmed.reshape(trimmed.shape[0],nr_coordinates,-1)
+        additional_features = data[:,nr_coordinates*3:]
+    else:
+        trimmed = data[:nr_coordinates*3]
+        stacked = trimmed.reshape(nr_coordinates,-1)
+        additional_features = data[nr_coordinates*3:]
+    return stacked,additional_features
+
+
+def test_reprojection_loss(query, pca):
     '''
     Performs encoding and reprojection of a dataset
     with 1 - n components
     plots the reprojection loss by number of used components
     '''
-    original_shape = sample.shape
+    #original_shape = sample.shape
+    #query = sample.reshape(sample.shape[0], sample.shape[1]*sample.shape[2])
+
     max_components = pca.components_.shape[0]
     mean_dist_errors = []
     all_eigenleaves = pca.components_
-    query = sample.reshape(sample.shape[0], sample.shape[1]*sample.shape[2])
     RMSEs = []
     for i in range(max_components, 0, -1):
         query_weight = compress(query, all_eigenleaves[:i], pca)
         reprojection = decompress(query_weight, all_eigenleaves[:i], pca)
-        unrolled = reprojection.reshape(original_shape) # restack
-        euclidean_dist_error = np.linalg.norm(sample-unrolled, axis = -1) # euclidean distance between each point pair
-        RMSE=np.mean(np.sqrt((euclidean_dist_error**2).mean(axis=-1)))
-        mean_error = euclidean_dist_error.mean(axis=-1).mean()
+
+        #unrolled = reprojection.reshape(original_shape) # restack
+        #euclidean_dist_error = np.linalg.norm(query-reprojection, axis = -1) # (nr_examples x nr_points) euclidean distance between each point pair, for each example
+        single_error = query-reprojection # (nr_examples x nr_features) distance for each individual feature, coordinates are unrolled
+        single_RMSEs=np.sqrt((single_error**2).mean(axis=-1)) # One RMSE for each example
+        mRMSE = np.mean(single_RMSEs) # Mean RMSE across all examples
+        mean_error = abs(single_error).mean(axis=-1).mean() # mean error across all examples and all features
         mean_dist_errors.append(mean_error)
-        RMSEs.append(RMSE)
+        RMSEs.append(mRMSE)
 
     plt.plot(range(max_components, 0, -1), mean_dist_errors)
-    plt.ylabel('Mean euclidean distance error')
+    plt.ylabel('Mean absolute error across all examples and all features')
     plt.xlabel('Number of principal components')
     plt.show()
 
     plt.plot(range(max_components, 0, -1), RMSEs)
-    plt.ylabel('Mean RMSE')
+    plt.ylabel('Mean RMSE across all examples')
     plt.xlabel('Number of principal components')
     plt.show()
 
@@ -287,14 +297,14 @@ def plot_3_components(data, pca, labels=None):
     Transforms a data set to feature space and plots
     the data's first three components
     '''
-    flat_data = data.reshape(data.shape[0], data.shape[1]*data.shape[2])
-    transformed = pca.transform(flat_data)
-    markers = [path.Path(leaf[:,:2]) for leaf in data]
+    coordinates, additional_features = reshape_coordinates_and_additional_features(data, nr_coordinates=500)
+    transformed = pca.transform(data)
+    markers = [path.Path(leaf[:,:2]) for leaf in coordinates]
 
     # Plot with regular markers using labels as colours
-    ax = plt.figure(figsize=(16,10)).gca(projection='3d')
     if labels is not None:
-        scatterplot = ax.scatter(xs=transformed[:,0], ys=transformed[:,1], zs=transformed[:,2],c=labels[:flat_data.shape[0],3], cmap='rainbow')
+        ax = plt.figure(figsize=(16,10)).gca(projection='3d')
+        scatterplot = ax.scatter(xs=transformed[:,0], ys=transformed[:,1], zs=transformed[:,2],c=labels[:data.shape[0],3], cmap='rainbow')
         ax.set_xlabel('first component')
         ax.set_ylabel('second component')
         ax.set_zlabel('third component')
@@ -319,14 +329,14 @@ def plot_2_components(data, pca, labels=None, components=[0,1]):
     Transforms a data set to feature space and plots
     the data's first two components
     '''
-    flat_data = data.reshape(data.shape[0], data.shape[1]*data.shape[2])
-    transformed = pca.transform(flat_data)
-    markers = [path.Path(leaf[:,:2]) for leaf in data]
+    transformed = pca.transform(data)
+    coordinates, additional_features = reshape_coordinates_and_additional_features(data, nr_coordinates=500)
+    markers = [path.Path(leaf[:,:2]) for leaf in coordinates]
 
     # Plot with regular markers using labels as colours
     fig, ax = plt.subplots()
     if labels is not None:
-        scatterplot = ax.scatter(transformed[:,components[0]], transformed[:,components[1]],c=labels[:flat_data.shape[0],3], cmap='rainbow')
+        scatterplot = ax.scatter(transformed[:,components[0]], transformed[:,components[1]],c=labels[:data.shape[0],3], cmap='rainbow')
         ax.set_xlabel('component {}'.format(components[0]))
         ax.set_ylabel('component {}'.format(components[1]))
         legend1 = ax.legend(*scatterplot.legend_elements(), title="Classes")
@@ -344,15 +354,16 @@ def plot_2_components(data, pca, labels=None, components=[0,1]):
     ax.add_artist(legend1)
     plt.show()
 
-def new_random_leaf_from_distribution(data, labels, pca, draw=True):
+def new_random_leaf_from_distribution(query, labels, pca, draw=True):
     '''
     Gets the distributions for all principal components
     Randomly samples components from their distributions to create a new plausible random leaf
     '''
-    original_shape = data.shape
-    query = data.reshape(data.shape[0], data.shape[1]*data.shape[2])
+    #original_shape = data.shape
+    #query = data.reshape(data.shape[0], data.shape[1]*data.shape[2])
+    components = 50
     all_eigenleaves = pca.components_
-    query_weight = compress(query, all_eigenleaves[:50], pca).T #(examples x components)
+    query_weight = compress(query, all_eigenleaves[:components], pca).T #(examples x components)
     ranges = np.asarray([np.min(query_weight, axis=0),np.max(query_weight, axis=0)])
     if draw:
         plt.boxplot(query_weight)
@@ -369,28 +380,32 @@ def new_random_leaf_from_distribution(data, labels, pca, draw=True):
     # sample each feature randomly from the existing feature vectors
     new_leaf = np.asarray([query_weight[np.random.choice(query_weight.shape[0]),i] for i in range(query_weight.shape[1])])
     reprojection = decompress(new_leaf, all_eigenleaves[:50], pca)
-    random_leaf = reprojection.reshape(1,original_shape[1],original_shape[2])
-    mean_leaf = pca.mean_.reshape(1,original_shape[1],original_shape[2])
-
-    cloud = visualise.array_to_o3d_pointcloud(random_leaf[0])
-    cloud2 = visualise.array_to_o3d_pointcloud(mean_leaf[0])
+    random_leaf, random_additional_features = reshape_coordinates_and_additional_features(reprojection, nr_coordinates=500)
+    mean_leaf, mean_additional_features = reshape_coordinates_and_additional_features(pca.mean_, nr_coordinates=500)
+    cloud = visualise.array_to_o3d_pointcloud(random_leaf)
+    cloud2 = visualise.array_to_o3d_pointcloud(mean_leaf)
     if draw:
         visualise.draw2([cloud, cloud2], 'test', offset = True )
     return ranges
 
 def t_sne(data, labels=None, label_meaning=None):
-    # tsne on just coordinates
+    '''
+    Performs tSNE on the given feature vectors, including any additional information given at the end of the vector.
+    Intended to use only with coordinates normalised in position, rotation, and scale.
+    The markers in the plot do not show location, rotation, or scale information. Only leaf shape.
+    '''
     tsne = TSNE()
-    flat_data = data.reshape(data.shape[0], data.shape[1]*data.shape[2])
-    X_embedded = tsne.fit_transform(flat_data)
-    markers = [path.Path(leaf[:,:2]) for leaf in data]
+    X_embedded = tsne.fit_transform(data)
+    coordinates, additional_features = reshape_coordinates_and_additional_features(data, nr_coordinates=500)
+    markers = [path.Path(leaf[:,:2]) for leaf in coordinates]
+
     if labels is not None:
         max_color = max(labels)
         cmap = cm.get_cmap('rainbow')
         colours = cmap((labels/max_color))
 
     fig, ax = plt.subplots()
-    ax.set_title('t-SNE embedding of leaf outline coordinates')
+    ax.set_title('t-SNE embedding of leaf input vectors (coordinates and potential additional information')
     if labels is not None:
         for i, _m, _x, _y in zip(range(len(markers)), markers, X_embedded[:,0], X_embedded[:,1]):
             scatterplot = ax.scatter(_x, _y, marker=_m, s=500, c='#FFFFFF', edgecolors=colours[i].reshape(1,-1))
@@ -398,21 +413,27 @@ def t_sne(data, labels=None, label_meaning=None):
         legend1 = ax.legend(np.unique(labels, axis = 0), labelcolor=cmap((np.unique(labels, axis = 0)/max_color)), ncol=2, markerscale=0)
         ax.add_artist(legend1)
         if label_meaning is not None:
-            ax.set_title('t-SNE embedding of outline coordinates. Colours represent {}'.format(label_meaning))
+            ax.set_title('t-SNE embedding of leaf input vectors (coordinates and potential additional information. Colours represent {}'.format(label_meaning))
     else:
         for _m, _x, _y in zip(markers, X_embedded[:,0], X_embedded[:,1]):
             scatterplot = ax.scatter(_x, _y, marker=_m, s=500, c='#FFFFFF', edgecolors='#1f77b4')
     plt.show()
 
 def pca_then_t_sne(data, labels=None, label_meaning=None, nr_components=50):
+    '''
+    Performs tSNE on the extracted feature components by PCA.
+    Intended to use only with coordinates normalised in position, rotation, and scale.
+    The markers in the plot do not show location, rotation, or scale information. Only leaf shape.
+    '''
     #tsne on the pca extracted feature components
     tsne = TSNE()
-    flat_data = data.reshape(data.shape[0], data.shape[1]*data.shape[2])
     all_eigenleaves = pca.components_
-    query_weight = compress(flat_data, all_eigenleaves[:nr_components], pca)
+    query_weight = compress(data, all_eigenleaves[:nr_components], pca)
     query_weight.T
     X_embedded = tsne.fit_transform(query_weight.T)
-    markers = [path.Path(leaf[:,:2]) for leaf in data]
+    coordinates, additional_features = reshape_coordinates_and_additional_features(data, nr_coordinates=500)
+    markers = [path.Path(leaf[:,:2]) for leaf in coordinates]
+
     if labels is not None:
         max_color = max(labels)
         cmap = cm.get_cmap('rainbow')
@@ -435,15 +456,14 @@ def pca_then_t_sne(data, labels=None, label_meaning=None, nr_components=50):
     return
 
 def analyse_feature_space_clusters(data, labels, pca, nr_clusters=4):
-    flat_data = data.reshape(data.shape[0], data.shape[1]*data.shape[2])
-    transformed = pca.transform(flat_data)
+    transformed = pca.transform(data)
     kmeans = KMeans(n_clusters=nr_clusters, random_state=0).fit(transformed)
     plt.scatter(transformed[:,0], transformed[:,1],c=kmeans.labels_)
     plt.show()
 
     fig, axs = plt.subplots(3,3)
-
-    clusters = [data[np.argwhere(kmeans.labels_== cluster).flatten(),:] for cluster in range(nr_clusters)]
+    stacked_coordinates, add_feat = reshape_coordinates_and_additional_features(data, nr_coordinates=500)
+    clusters = [stacked_coordinates[np.argwhere(kmeans.labels_== cluster).flatten(),:] for cluster in range(nr_clusters)]
     for cluster in clusters:
         mins = np.min(cluster, axis=1)
         maxes = np.max(cluster, axis=1)
@@ -469,30 +489,26 @@ def analyse_feature_space_clusters(data, labels, pca, nr_clusters=4):
     plt.show()
 
 def recreate_artefact(data, pca):
+    '''
+    Recreates a sampling artefact, which makes the same shapes look dissimilar in PCA feautre space,
+    if their extracted boundary chains are sampled in opposite direction (clockwise and counter-clockwise)
+    '''
     sample = data[1]
-    original_shape = sample.shape
     all_eigenleaves = pca.components_
-
     sample_flipped = np.flip(sample, 0)
-    query_flipped = sample_flipped.reshape(sample.shape[0]*sample.shape[1])
-    flipped_weight = compress(query_flipped, all_eigenleaves[:50], pca)
-    query = sample.reshape(sample.shape[0]*sample.shape[1])
-    query_weight = compress(query, all_eigenleaves[:50], pca)
-
-    np.linalg.norm(query_weight-flipped_weight)
-    import pdb; pdb.set_trace()
+    flipped_weight = compress(sample_flipped, all_eigenleaves[:50], pca)
+    query_weight = compress(sample, all_eigenleaves[:50], pca)
+    print(f'Feature space distance: {np.linalg.norm(query_weight-flipped_weight)}')
 
 if __name__== "__main__":
     dir = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'pca_input')
 
-    train_ds, test_ds, train_labels, test_labels, pca, transformed = get_encoding(train_split=0, dir=dir, location=True, rotation=True, scale=True, as_features=False)
-    import pdb; pdb.set_trace()
-
-    single_plant_leaves, single_plant_labels= select_subset(train_ds, train_labels, plant_nr = 6)
+    train_ds, test_ds, train_labels, test_labels, pca, transformed = get_encoding(train_split=0, dir=dir, location=True, rotation=True, scale=True, as_features=True)
 
     #plot_explained_variance(pca)
     #test_reprojection_loss(train_ds, pca)
-    perform_single_reprojection(train_ds[0], pca, components = 50, draw=True)
+
+    #perform_single_reprojection(train_ds[0], pca, components = 50, draw=True)
     #ranges = new_random_leaf_from_distribution(train_ds, train_labels, pca)
     #recreate_artefact(train_ds, pca)
 
@@ -500,10 +516,13 @@ if __name__== "__main__":
     #plot_3_components(train_ds, pca, labels = train_labels)
     #plot_2_components(train_ds, pca, labels = train_labels, components = [0,1])
 
-    # t_sne(train_ds, train_labels[:,3], label_meaning='leaf number')
-    # pca_then_t_sne(train_ds, train_labels[:,3], label_meaning='leaf number')
+    #t_sne(train_ds, train_labels[:,3], label_meaning='leaf number')
+    #pca_then_t_sne(train_ds, train_labels[:,3], label_meaning='leaf number')
     #t_sne(train_ds, label_meaning='leaf number')
     #pca_then_t_sne(train_ds, label_meaning='leaf number')
-    t_sne(single_plant_leaves, single_plant_labels[:,3], label_meaning='leaf number')
-    pca_then_t_sne(single_plant_leaves, single_plant_labels[:,3], label_meaning='leaf number')
+
+    #single_plant_leaves, single_plant_labels= select_subset(train_ds, train_labels, plant_nr = 6)
+    #t_sne(single_plant_leaves, single_plant_labels[:,3], label_meaning='leaf number')
+    #pca_then_t_sne(single_plant_leaves, single_plant_labels[:,3], label_meaning='leaf number')
+
     #analyse_feature_space_clusters(train_ds, train_labels, pca)
