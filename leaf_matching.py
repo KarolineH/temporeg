@@ -103,14 +103,14 @@ def get_score_across_dataset(centroids, centroid_labels, outline_data, outline_l
     print(f'total: {total}')
     return bonn_count, our_count, total
 
-def testing_pipeline():
+def testing_pipeline(location=False, rotation=False, scale=False, as_features=False):
     # Load data needed for Bonn method
     directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'transform_log')
     centroids, centroid_labels = get_location_info(directory) # already sorted
 
     # Load data needed for my method
     directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'pca_input')
-    train_ds, test_ds, train_labels, test_labels, pca, transformed = leaf_encoding.get_encoding(train_split=0, dir=directory, location=False, rotation=False, scale=False, as_features=False)
+    train_ds, test_ds, train_labels, test_labels, pca, transformed = leaf_encoding.get_encoding(train_split=0, dir=directory, location=location, rotation=rotation, scale=scale, as_features=as_features)
 
     outline_data, outline_labels = util.sort_examples(train_ds, train_labels)
 
@@ -185,4 +185,40 @@ def plot_heatmap(data, labels=None, ax = None, show_values=False):
 
 if __name__== "__main__":
 
-    testing_pipeline()
+    print(':::  No additional information')
+    testing_pipeline(location=False, rotation=False, scale=False, as_features=True)
+
+    print('::: + location (as features)')
+    testing_pipeline(location=True, rotation=False, scale=False, as_features=True)
+    print('::: + rotation (as features)')
+    testing_pipeline(location=False, rotation=True, scale=False, as_features=True) # *
+    print('::: + scale (as features)')
+    testing_pipeline(location=False, rotation=False, scale=True, as_features=True)
+
+    print('::: + location + rotation + scale (as features)')
+    testing_pipeline(location=True, rotation=True, scale=True, as_features=True)
+    print('::: + location + rotation (as features)')
+    testing_pipeline(location=True, rotation=True, scale=False, as_features=True)
+    print('::: + location + scale (as features)')
+    testing_pipeline(location=True, rotation=False, scale=True, as_features=True)
+    print('::: + rotation + scale (as features)')
+    testing_pipeline(location=False, rotation=True, scale=True, as_features=True)
+
+    print(':::  No additional information')
+    testing_pipeline(location=False, rotation=False, scale=False, as_features=False)
+
+    print('::: + location (intrinsic to coordinates)')
+    testing_pipeline(location=True, rotation=False, scale=False, as_features=False)
+    print('::: + rotation (intrinsic to coordinates)')
+    testing_pipeline(location=False, rotation=True, scale=False, as_features=False)
+    print('::: + scale (intrinsic to coordinates)')
+    testing_pipeline(location=False, rotation=False, scale=True, as_features=False)
+
+    print('::: + location + rotation + scale (intrinsic to coordinates)')
+    testing_pipeline(location=True, rotation=True, scale=True, as_features=False)
+    print('::: + location + rotation (intrinsic to coordinates)')
+    testing_pipeline(location=True, rotation=True, scale=False, as_features=False)
+    print('::: + location + scale (intrinsic to coordinates)')
+    testing_pipeline(location=True, rotation=False, scale=True, as_features=False)
+    print('::: + rotation + scale (intrinsic to coordinates)')
+    testing_pipeline(location=False, rotation=True, scale=True, as_features=False)
