@@ -4,9 +4,12 @@ import numpy as np
 import re
 import leaf_encoding
 import copy
+import packages.pheno4d_util as util
 
-# load point cloud (.ply)
 def read_ply_cloud(file):
+    '''
+    Load a point cloud from a .ply file
+    '''
     try:
         pcd = o3d.io.read_point_cloud(file)
     except:
@@ -15,6 +18,9 @@ def read_ply_cloud(file):
     return pcd
 
 def read_ply_mesh(file):
+    '''
+    Load a 3D mesh object from a .ply file
+    '''
     try:
         mesh = o3d.io.read_triangle_mesh(file)
     except:
@@ -23,6 +29,10 @@ def read_ply_mesh(file):
     return mesh
 
 def read_obj_with_no_faces(file):
+    '''
+    Load a 3D mesh object from a .obj file, which has been saved only with verteces and connecting edges,
+    but does not have any faces. This usually trips up standard methods.
+    '''
     #read from file
     try:
         content = open(file, 'r')
@@ -41,6 +51,9 @@ def read_obj_with_no_faces(file):
     return line_set
 
 def read_sampled_outline(file):
+    '''
+    Load our own sampled outline format from a .npy file.
+    '''
     try:
         data = np.load(file)
     except:
@@ -48,23 +61,15 @@ def read_sampled_outline(file):
     return data
 
 def array_to_o3d_pointcloud(data):
+    '''
+    Transform a numpy array into an Open3D Point Cloud object
+    '''
     if data is not None:
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(data)
         return pcd
     else:
         return None
-
-def standardise_pc_scale(data):
-    original_shape = data.shape
-    mins = np.asarray([np.min(leaf, axis=0) for leaf in data])
-    maxes = np.asarray([np.max(leaf, axis=0) for leaf in data])
-    ranges = np.asarray([np.ptp(leaf, axis=0) for leaf in data])
-    flat_data = data.reshape(data.shape[0], data.shape[1]*data.shape[2])
-    scale_factor = np.max(abs(np.concatenate((mins, maxes), axis=1)), axis=1)
-    standardised = flat_data / scale_factor[:,None]
-    out = standardised.reshape(original_shape)
-    return out
 
 def set_axes_equal(ax):
     '''Make axes of 3D plot have equal scale so that spheres appear as spheres,
@@ -94,33 +99,48 @@ def set_axes_equal(ax):
     ax.set_ylim3d([y_middle - plot_radius, y_middle + plot_radius])
     ax.set_zlim3d([z_middle - plot_radius, z_middle + plot_radius])
 
-def assemble_geometries(dir, plant_nr, step_nr, leaf_nr):
-    pc_file = os.path.join(dir, 'aligned', 'plant' + str(plant_nr) + '_step' + str(step_nr) + '_leaf' + str(leaf_nr) + '.ply')
-    pcd = read_ply_cloud(pc_file)
-    x_offset = -1.2 * (pcd.get_max_bound()[0] - pcd.get_min_bound()[0])
-    # if pcd is not None:
-    #     pcd.translate((x_offset,0,0))
+def assemble_geometries(dir, visualise=True, plant_nr=0, timestep=3, leaf_nr=3):
+    '''
+    This loads all data necessary to later create a plot of the whole preprocessing pipeline,
+    stacking multiple geometry representations into the same 3D plot.
+    Includes the originap point cloud, meshed object, original and cleaned boundary objects, and the sampled outline (PCA input).
+    '''
+    pca_input_directory = os.path.join(dir, 'pca_input')
+    train_ds, test_ds, train_labels, test_labels, pca, transformed = leaf_encoding.get_encoding(train_split=0, dir=pca_input_directory, location=False, rotation=False, scale=False, as_features=False)
+    data, labels = util.sort_examples(train_ds, train_labels) #sort
+    subset, subset_labels = leaf_encoding.select_subset(data, labels, plant_nr=plant_nr, timestep=timestep, leaf=leaf_nr)
+    subset_labels = subset_labels[0]
 
-    mesh_file = os.path.join(dir, 'meshed', 'plant' + str(plant_nr) + '_step' + str(step_nr) + '_leaf' + str(leaf_nr) + '.ply')
-    mesh = read_ply_mesh(mesh_file)
-    mesh.compute_vertex_normals()
+    if subset.shape[0] > 0:
+        pc_file = os.path.join(dir, 'aligned', 'plant' + str(subset_labels[0]) + '_step' + str(subset_labels[1]) + '_day' + str(subset_labels[2]) + '_leaf' + str(subset_labels[3]) + '.ply')
+        pcd = read_ply_cloud(pc_file)
 
-    outline_file = os.path.join(dir, 'outline', 'plant' + str(plant_nr) + '_step' + str(step_nr) + '_leaf' + str(leaf_nr) + '_full.obj')
-    outline_filtered_file = os.path.join(dir, 'outline', 'plant' + str(plant_nr) + '_step' + str(step_nr) + '_leaf' + str(leaf_nr) + '_main.obj')
-    outline_full = read_obj_with_no_faces(outline_file)
-    outline_filtered = read_obj_with_no_faces(outline_filtered_file)
-    #
-    # if outline_full is not None:
-    #     outline_full.translate((-x_offset,0,0))
-    # if outline_filtered is not None:
-    #     outline_filtered.translate((-2*x_offset,0,0))
+        mesh_file = os.path.join(dir, 'meshed', 'plant' + str(subset_labels[0]) + '_step' + str(subset_labels[1]) + '_day' + str(subset_labels[2]) + '_leaf' + str(subset_labels[3]) + '.ply')
+        mesh = read_ply_mesh(mesh_file)
+        mesh.compute_vertex_normals()
 
-    sampled_file = os.path.join(dir, 'pca_input', 'plant' + str(plant_nr) + '_step' + str(step_nr) + '_leaf' + str(leaf_nr) + '_main.npy')
-    sampled_outline = array_to_o3d_pointcloud(read_sampled_outline(sampled_file))
+        outline_file = os.path.join(dir, 'outline', 'plant' + str(subset_labels[0]) + '_step' + str(subset_labels[1]) + '_day' + str(subset_labels[2]) + '_leaf' + str(subset_labels[3]) + '_full.obj')
+        outline_filtered_file = os.path.join(dir, 'outline', 'plant' + str(subset_labels[0]) + '_step' + str(subset_labels[1]) + '_day' + str(subset_labels[2]) + '_leaf' + str(subset_labels[3]) + '_main.obj')
+        outline_full = read_obj_with_no_faces(outline_file)
+        outline_filtered = read_obj_with_no_faces(outline_filtered_file)
 
-    return [pcd, mesh, outline_full, outline_filtered, sampled_outline]
+        sampled_file = os.path.join(dir, 'pca_input', 'plant' + str(subset_labels[0]) + '_step' + str(subset_labels[1]) + '_day' + str(subset_labels[2]) + '_leaf' + str(subset_labels[3]) + '_main.npy')
+        sampled_outline = array_to_o3d_pointcloud(read_sampled_outline(sampled_file))
+
+        geometries = [pcd, mesh, outline_full, outline_filtered, sampled_outline]
+        if visualise:
+            draw(geometries, 'name', offset = True)
+            draw2(geometries, 'name', offset = True)
+
+        return geometries
+    else:
+        print('No leaves in this subset')
+        return None
 
 def draw(geometries, file, offset = False, labels=None):
+    '''
+    Takes Open3D gemoetry objects and plots them using the o3D visualiser.
+    '''
     vis = o3d.visualization.Visualizer()
     vis.create_window(window_name=file)
     width = 0
@@ -137,6 +157,10 @@ def draw(geometries, file, offset = False, labels=None):
     vis.destroy_window()
 
 def draw2(geometries, name, offset = False, labels=None):
+    '''
+    Takes Open3D gemoetry objects and plots them using the o3D visualization.gui.
+    Version 2 with improved offset calculation.
+    '''
     app = o3d.visualization.gui.Application.instance
     app.initialize()
     vis = o3d.visualization.O3DVisualizer(name, 1024, 768)
@@ -161,51 +185,46 @@ def draw2(geometries, name, offset = False, labels=None):
     app.run()
 
 def timestep_comparison(directory=None):
+    '''
+    Plots all leaf outlines of one timestep at a time, cycling through all plants and time-steps.
+    '''
     if directory is None:
         directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'pca_input')
-    data, names = leaf_encoding.load_inputs(directory)
-    labels = leaf_encoding.get_labels(names)
-    standardised = standardise_pc_scale(data)
-
-    sorted_data = standardised[np.lexsort((labels[:,2], labels[:,1],labels[:,0])),:]
-    sorted_labels = labels[np.lexsort((labels[:,2], labels[:,1],labels[:,0])),:]
+    train_ds, test_ds, train_labels, test_labels, pca, transformed = leaf_encoding.get_encoding(train_split=0, dir=directory, location=False, rotation=False, scale=False, as_features=False)
+    data, labels = util.sort_examples(train_ds, train_labels)
 
     for plant in np.unique(labels[:,0]):
         timesteps = np.unique(labels[labels[:,0] == plant][:,1])
         for i,time_step in enumerate(timesteps):
-            before, before_labels = leaf_encoding.select_subset(sorted_data, sorted_labels, plant_nr = plant, timestep=time_step, leaf=None)
+            before, before_labels = leaf_encoding.select_subset(data, labels, plant_nr = plant, timestep=time_step, leaf=None)
             #after, after_labels = leaf_encoding.select_subset(data, labels, plant_nr = plant, timestep=timesteps[i+1], leaf=None)
-            before_clouds = [array_to_o3d_pointcloud(outline) for outline in before]
-            #after_clouds = [array_to_o3d_pointcloud(outline) for outline in after]
+
+            stacked_before, before_add_f = leaf_encoding.reshape_coordinates_and_additional_features(before, nr_coordinates=500)
+            #stacked_after, after_add_f = leaf_encoding.reshape_coordinates_and_additional_features(before, nr_coordinates=500)
+            before_clouds = [array_to_o3d_pointcloud(outline) for outline in stacked_before]
+            #after_clouds = [array_to_o3d_pointcloud(outline) for outline in stacked_after]
             draw2(before_clouds, "time step number {}".format(time_step), offset=True, labels=before_labels[:,2])
 
 def same_leaf_across_time(directory=None):
+    '''
+    Plots all leaf outlines of the same individual leaf over all time-steps side-by-side.
+    Cycles over the entire data set.
+    '''
     if directory is None:
         directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'pca_input')
-    data, names = leaf_encoding.load_inputs(directory)
-    standardised = standardise_pc_scale(data)
-    labels = leaf_encoding.get_labels(names)
-
-    sorted_data = standardised[np.lexsort((labels[:,2], labels[:,1],labels[:,0])),:]
-    sorted_labels = labels[np.lexsort((labels[:,2], labels[:,1],labels[:,0])),:]
+    train_ds, test_ds, train_labels, test_labels, pca, transformed = leaf_encoding.get_encoding(train_split=0, dir=directory, location=False, rotation=False, scale=False, as_features=False)
+    data, labels = util.sort_examples(train_ds, train_labels)
 
     for plant in np.unique(labels[:,0]):
-        for leaf in np.unique(labels[:,2]):
-            subset, sub_labels = leaf_encoding.select_subset(sorted_data, sorted_labels, plant_nr = plant, leaf=leaf)
-            clouds = [array_to_o3d_pointcloud(outline) for outline in subset]
-            # draw(before_clouds, 'Timestep Leaf comparison', offset = True)
-            # draw(after_clouds, 'Timestep Leaf comparison', offset = True)
+        for leaf in np.unique(labels[:,-1]):
+            subset, sub_labels = leaf_encoding.select_subset(data, labels, plant_nr = plant, leaf=leaf)
+            stacked, add_f = leaf_encoding.reshape_coordinates_and_additional_features(subset, nr_coordinates=500)
+            clouds = [array_to_o3d_pointcloud(outline) for outline in stacked]
             draw(clouds, "leaf number {}".format(leaf), offset=True, labels=sub_labels[:,1])
 
 if __name__== "__main__":
     #timestep_comparison()
-    same_leaf_across_time()
+    #same_leaf_across_time()
 
     data_directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed')
-    all_leaves = os.listdir(os.path.join(data_directory, 'aligned'))
-
-    for file in all_leaves:
-        numbers = np.array(re.findall(r'\d+', file), dtype='int')
-        geometries = assemble_geometries(data_directory, numbers[0], numbers[1], numbers[2])
-        draw(geometries, file, offset = True)
-        draw2(geometries, file, offset = True)
+    geometries = assemble_geometries(data_directory, visualise=True, plant_nr=0, timestep=0, leaf_nr=3)

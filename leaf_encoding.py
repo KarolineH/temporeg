@@ -132,6 +132,18 @@ def add_scale_location_rotation_full(data, labels, location=False, rotation=Fals
 
     return out_data, sorted_labels, shift_vectors, original_target_axes, scales
 
+def reshape_coordinates_and_additional_features(data, nr_coordinates=500):
+    # data can be 1D feature vector or 2D matrix of examples x features
+    if len(data.shape) > 1:
+        trimmed = data[:,:nr_coordinates*3]
+        stacked = trimmed.reshape(trimmed.shape[0],nr_coordinates,-1)
+        additional_features = data[:,nr_coordinates*3:]
+    else:
+        trimmed = data[:nr_coordinates*3]
+        stacked = trimmed.reshape(nr_coordinates,-1)
+        additional_features = data[nr_coordinates*3:]
+    return stacked,additional_features
+
 def fit_pca(data):
     #flat_data = data.reshape(data.shape[0], data.shape[1]*data.shape[2])
     pca = PCA()
@@ -242,19 +254,6 @@ def perform_single_reprojection(query, pca, components=None, draw = False):
         cloud2 = visualise.array_to_o3d_pointcloud(stacked_reprojection)
         visualise.draw([cloud1, cloud2], 'test', offset = True )
     return
-
-def reshape_coordinates_and_additional_features(data, nr_coordinates=500):
-    # data can be 1D feature vector or 2D matrix of examples x features
-    if len(data.shape) > 1:
-        trimmed = data[:,:nr_coordinates*3]
-        stacked = trimmed.reshape(trimmed.shape[0],nr_coordinates,-1)
-        additional_features = data[:,nr_coordinates*3:]
-    else:
-        trimmed = data[:nr_coordinates*3]
-        stacked = trimmed.reshape(nr_coordinates,-1)
-        additional_features = data[nr_coordinates*3:]
-    return stacked,additional_features
-
 
 def test_reprojection_loss(query, pca):
     '''
