@@ -60,9 +60,10 @@ def get_score_across_dataset(centroids, centroid_labels, outline_data, outline_l
     centroid_labels = centroid_labels[indeces,:]
 
     # Loop over all pairs of time steps
-    bonn_count = 0
-    our_count = 0
-    total = 0
+    # Count all posisble true matches, the actual number of true matches, and 3 types of mistakes for each method
+    bonn_counts = [0,0,0,0,0] # true matches, true mistake, open before mistake, open after mistake, open open mistake
+    outline_counts = [0,0,0,0,0]
+    total_true_pairings = 0
     for plant in np.unique(outline_labels[:,0]): # for each plant
         for time_step in range(np.unique(outline_labels[:,1]).size-1): # and for each time step available in the processed data
 
@@ -90,20 +91,34 @@ def get_score_across_dataset(centroids, centroid_labels, outline_data, outline_l
                 plant_id = str(c_after_labels[0,:-1])
                 plot_bonn_assignment(c_before, c_after, c_before_labels, c_after_labels, c_matches, title=plant_id)
 
-            # count correct assignments (true positives)
-            for pair in range(len(c_matches)):
-                total += 1
-                if c_matches[pair][0,-1] == c_matches[pair][1,-1]:
-                    bonn_count += 1
-                if o_matches[pair][0,-1] == o_matches[pair][1,-1]:
-                    our_count += 1
+            ''' SCORING'''
+            # count total possible correct assignments (true positives)
+            true_pairs = np.intersect1d(c_before_labels[:,-1],c_after_labels[:,-1])
+            total_true_pairings += true_pairs.shape[0]
 
-    print(f'Bonn (centroid) method: {bonn_count}')
-    print(f'Our (outline) method: {our_count}')
-    print(f'total: {total}')
-    return bonn_count, our_count, total
+            only_before = np.setdiff1d(c_before_labels[:,-1],c_after_labels[:,-1])
+            only_after = np.setdiff1d(c_after_labels[:,-1],c_before_labels[:,-1])
 
-def testing_pipeline(location=False, rotation=False, scale=False, as_features=False):
+            for method, scores in zip([c_matches, o_matches],[bonn_counts, outline_counts]):
+                for pair in method:
+                    if pair[0,-1] == pair[1,-1]:
+                        # A true match is found
+                        scores[0] += 1
+                    elif pair[0,-1] in true_pairs and pair[1,-1] in true_pairs:
+                        # Two leaves from existing pairs have been mistakenly matched
+                        scores[1] += 1
+                    elif pair[0,-1] in true_pairs or pair[1,-1] in true_pairs:
+                        # One leaf from an existing pair was mistakenly matched to an unpaired leaf
+                        if pair[0,-1] in only_before:
+                            scores[2] += 1
+                        elif pair[1,-1] in only_after:
+                            scores[3] += 1
+                    else:
+                        scores[4] += 1
+
+    return bonn_counts, outline_counts, total_true_pairings
+
+def testing_pipeline(location=False, rotation=False, scale=False, as_features=False, trim_missing=True):
     # Load data needed for Bonn method
     directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'transform_log')
     centroids, centroid_labels = get_location_info(directory) # already sorted
@@ -114,7 +129,87 @@ def testing_pipeline(location=False, rotation=False, scale=False, as_features=Fa
 
     outline_data, outline_labels = util.sort_examples(train_ds, train_labels)
 
-    get_score_across_dataset(centroids, centroid_labels, outline_data, outline_labels, pca, trim_missing=True, plotting=False)
+    bonn_count, our_count, total = get_score_across_dataset(centroids, centroid_labels, outline_data, outline_labels, pca, trim_missing=trim_missing, plotting=False)
+    return bonn_count, our_count, total
+
+def tests():
+
+    conditions = [] # each element is location, rotation, scale, as_features)
+    descriptions = [] # Strings for the user to interpret the output by
+    i=0
+
+    # First with extra info as features in the input vector
+    conditions.append((False, False, False, True))
+    descriptions.append(f'Test {i}: Coordinates only, no additional information given')
+    i+=1
+    conditions.append((True, False, False, True))
+    descriptions.append(f'Test {i}: Coordinates + location as features')
+    i+=1
+    conditions.append((False, True, False, True))
+    descriptions.append(f'Test {i}: Coordinates + rotation as features')
+    i+=1
+    conditions.append((False, False, True, True))
+    descriptions.append(f'Test {i}: Coordinates + scale as features')
+    i+=1
+    conditions.append((True, False, True, True))
+    descriptions.append(f'Test {i}: Coordinates + scale + location as features')
+    i+=1
+    conditions.append((False, True, True, True))
+    descriptions.append(f'Test {i}: Coordinates + scale + rotation as features')
+    i+=1
+    conditions.append((True, True, False, True))
+    descriptions.append(f'Test {i}: Coordinates + location + rotation as features')
+    i+=1
+    conditions.append((True, True, True, True))
+    descriptions.append(f'Test {i}: Coordinates + location + rotation + scale as features')
+    i+=1
+
+    # Then with extra info given as intrinsic to the outline coordinates
+    conditions.append((False, False, False, False))
+    descriptions.append(f'Test {i}: Coordinates only, no additional information given')
+    i+=1
+    conditions.append((True, False, False, False))
+    descriptions.append(f'Test {i}: Coordinates + location given intrinsic to outline coordinates ')
+    i+=1
+    conditions.append((False, True, False, False))
+    descriptions.append(f'Test {i}: Coordinates + rotation given intrinsic to outline coordinates ')
+    i+=1
+    conditions.append((False, False, True, False))
+    descriptions.append(f'Test {i}: Coordinates + scale given intrinsic to outline coordinates ')
+    i+=1
+    conditions.append((True, False, True, False))
+    descriptions.append(f'Test {i}: Coordinates + scale + location given intrinsic to outline coordinates ')
+    i+=1
+    conditions.append((False, True, True, False))
+    descriptions.append(f'Test {i}: Coordinates + scale + rotation given intrinsic to outline coordinates ')
+    i+=1
+    conditions.append((True, True, False, False))
+    descriptions.append(f'Test {i}: Coordinates + location + rotation given intrinsic to outline coordinates ')
+    i+=1
+    conditions.append((True, True, True, False))
+    descriptions.append(f'Test {i}: Coordinates + location + rotation + scale given intrinsic to outline coordinates ')
+    i+=1
+
+    # Could run this routine this with different datasets as well
+    our_counts = []
+    bonn_counts = []
+    totals = []
+    for test, descr in zip(conditions, descriptions):
+        print('Running ' + descr)
+        bonn_count, our_count, total = testing_pipeline(location=test[0], rotation=test[1], scale=test[2], as_features=test[3], trim_missing=False)
+        our_counts.append(our_count)
+        bonn_counts.append(bonn_count)
+        totals.append(total)
+    print('Counts represent [true matches, mismatch of two leaves with existing matches, open before mismatch, open after mismatch, open open mismatch]')
+    print('Contour method')
+    print(np.asarray(our_counts))
+    print('Bonn method')
+    print(np.asarray(bonn_counts))
+    print('Total possible ture matches')
+    print(np.asarray(totals))
+
+    import pdb; pdb.set_trace()
+
 
 
 ''' PLOTTING '''
@@ -185,40 +280,4 @@ def plot_heatmap(data, labels=None, ax = None, show_values=False):
 
 if __name__== "__main__":
 
-    print(':::  No additional information')
-    testing_pipeline(location=False, rotation=False, scale=False, as_features=True)
-
-    print('::: + location (as features)')
-    testing_pipeline(location=True, rotation=False, scale=False, as_features=True)
-    print('::: + rotation (as features)')
-    testing_pipeline(location=False, rotation=True, scale=False, as_features=True) # *
-    print('::: + scale (as features)')
-    testing_pipeline(location=False, rotation=False, scale=True, as_features=True)
-
-    print('::: + location + rotation + scale (as features)')
-    testing_pipeline(location=True, rotation=True, scale=True, as_features=True)
-    print('::: + location + rotation (as features)')
-    testing_pipeline(location=True, rotation=True, scale=False, as_features=True)
-    print('::: + location + scale (as features)')
-    testing_pipeline(location=True, rotation=False, scale=True, as_features=True)
-    print('::: + rotation + scale (as features)')
-    testing_pipeline(location=False, rotation=True, scale=True, as_features=True)
-
-    print(':::  No additional information')
-    testing_pipeline(location=False, rotation=False, scale=False, as_features=False)
-
-    print('::: + location (intrinsic to coordinates)')
-    testing_pipeline(location=True, rotation=False, scale=False, as_features=False)
-    print('::: + rotation (intrinsic to coordinates)')
-    testing_pipeline(location=False, rotation=True, scale=False, as_features=False)
-    print('::: + scale (intrinsic to coordinates)')
-    testing_pipeline(location=False, rotation=False, scale=True, as_features=False)
-
-    print('::: + location + rotation + scale (intrinsic to coordinates)')
-    testing_pipeline(location=True, rotation=True, scale=True, as_features=False)
-    print('::: + location + rotation (intrinsic to coordinates)')
-    testing_pipeline(location=True, rotation=True, scale=False, as_features=False)
-    print('::: + location + scale (intrinsic to coordinates)')
-    testing_pipeline(location=True, rotation=False, scale=True, as_features=False)
-    print('::: + rotation + scale (intrinsic to coordinates)')
-    testing_pipeline(location=False, rotation=True, scale=True, as_features=False)
+    tests()
