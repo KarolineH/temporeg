@@ -193,7 +193,6 @@ def get_encoding(train_split=0, dir=None, location=False, rotation=False, scale=
     data, names = load_inputs(dir) # at this stage they are in local frame, with centroid as origin, but the scale is still not normalised
     labels = get_labels(names)
 
-
     train_ds, test_ds, train_labels, test_labels = split_dataset(data, labels, split=train_split)
 
     if as_features:
