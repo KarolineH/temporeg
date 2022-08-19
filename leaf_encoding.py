@@ -1,6 +1,7 @@
 import os
 import open3d as o3d
 from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
 import numpy as np
 import matplotlib.pyplot as plt
 import visualise
@@ -14,12 +15,12 @@ import packages.pheno4d_util as util
 from packages.LeafSurfaceReconstruction import helper_functions
 
 '''
-ENCODING and utilities
+Data pre-processing and utilities
 '''
 
-def load_inputs(dir):
-    leaves = os.listdir(dir)
-    data = np.asarray([np.load(os.path.join(dir, leaf)) for leaf in leaves])
+def load_inputs(directory):
+    leaves = os.listdir(directory)
+    data = np.asarray([np.load(os.path.join(directory, leaf)) for leaf in leaves])
     return data, leaves
 
 def get_labels(file_names):
@@ -144,13 +145,6 @@ def reshape_coordinates_and_additional_features(data, nr_coordinates=500):
         additional_features = data[nr_coordinates*3:]
     return stacked,additional_features
 
-def fit_pca(data):
-    #flat_data = data.reshape(data.shape[0], data.shape[1]*data.shape[2])
-    pca = PCA()
-    pca.fit(data)
-    transformed = pca.fit_transform(data)
-    return pca, transformed
-
 def split_dataset(data, labels, split = 0.2):
     total_nr_examples = data.shape[0]
     nr_test_examples = int(np.floor(split * total_nr_examples))
@@ -179,24 +173,70 @@ def select_subset(data, labels, plant_nr=None, timestep=None, day=None, leaf=Non
         sublabels = sublabels[np.argwhere(sublabels[:,3]==leaf).flatten(),:]
     return subset, sublabels
 
-def compress(query, components, pca):
-    query_weight = components @ (query - pca.mean_).T # compress
-    return query_weight
+'''
+PCA Encoding
+'''
 
-def decompress(weights, components, pca):
-    projection = weights.T @ components + pca.mean_ # decompress
-    return projection
+class PCA_Handler:
 
-def get_encoding(train_split=0, dir=None, location=False, rotation=False, scale=False, as_features=True):
-    if dir is None:
-        dir = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'pca_input')
-    data, names = load_inputs(dir) # at this stage they are in local frame, with centroid as origin, but the scale is still not normalised
+    def __init__(self, input_data, input_labels, standard=True):
+        self.training_data = input_data # already sorted
+        self.training_labels = input_labels # already sorted
+        self.standard_flag = standard
+        self.default_component_nr = 50
+        self.fit_scaler()
+        self.fit_pca()
+
+    def fit_scaler(self):
+        self.scaler = StandardScaler()
+        self.scaler.fit(self.training_data)
+        self.standard_training_data = self.scaler.transform(self.training_data)
+        return
+
+    def fit_pca(self):
+        self.pca = PCA()
+        if self.standard_flag:
+            self.pca.fit(self.standard_training_data)
+            self.transformed_training_data = self.pca.fit_transform(self.standard_training_data)
+        else:
+            self.pca.fit(self.training_data)
+            self.transformed_training_data = self.pca.fit_transform(self.training_data)
+        self.max_components = self.pca.components_.shape[0]
+        return
+
+    def compress(self, data, nr_components):
+        all_components = self.pca.components_
+        if nr_components is None:
+            nr_components = self.default_component_nr
+        if self.standard_flag:
+            if len(data.shape) == 1:
+                data = data.reshape(1, -1) # necessary if only one feature vectore is passed instead of a matrix of multiple examples
+            data = self.scaler.transform(data)
+        weights = all_components[:nr_components] @ (data - self.pca.mean_).T
+        return weights
+
+    def decompress(self, weights, nr_components):
+        all_components = self.pca.components_
+        if nr_components is None:
+            nr_components = self.default_component_nr
+
+        projection = weights.T @ all_components[:nr_components] + self.pca.mean_
+        if self.standard_flag:
+            output_data = self.scaler.inverse_transform(projection)
+        else:
+            output_data = projection
+        return output_data
+
+def get_encoding(train_split=0, directory=None, standardise=True, location=False, rotation=False, scale=False, as_features=False):
+    if directory is None:
+        directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'pca_input')
+    data, names = load_inputs(directory) # at this stage they are in local frame, with centroid as origin, but the scale is still not normalised
     labels = get_labels(names)
 
     train_ds, test_ds, train_labels, test_labels = split_dataset(data, labels, split=train_split)
 
     if as_features:
-        input, train_labels = add_scale_location_rotation_as_features(train_ds, train_labels, loc=location, rot=rotation, sc=scale)
+        input_data, train_labels = add_scale_location_rotation_as_features(train_ds, train_labels, loc=location, rot=rotation, sc=scale)
         if test_ds.size > 0:
             test_ds, test_labels =  add_scale_location_rotation_as_features(test_ds, test_labels, loc=location, rot=rotation, sc=scale)
     else:
@@ -204,75 +244,63 @@ def get_encoding(train_split=0, dir=None, location=False, rotation=False, scale=
         if test_ds.size > 0:
             test_ds, test_labels, test_location_info, test_rotation_info, test_scale_info = add_scale_location_rotation_full(test_ds, test_labels, location, rotation, scale)
         # Flatten training set to use for PCA
-        input = train_ds.reshape(train_ds.shape[0], train_ds.shape[1]*train_ds.shape[2])
+        input_data = train_ds.reshape(train_ds.shape[0], train_ds.shape[1]*train_ds.shape[2])
 
-    pca, transformed = fit_pca(input)
-    return input, test_ds, train_labels, test_labels, pca, transformed
+    input_data, input_labels = util.sort_examples(input_data, train_labels) #sort
+    PCAH = PCA_Handler(input_data, labels, standard=standardise)
+    return PCAH, test_ds, test_labels
 
 '''
 TESTING and plotting
 '''
 
-def plot_explained_variance(pca):
-    print(f"Using {pca.components_.shape[0]} components")
-    print(f"Explained variance ratio: {sum(pca.explained_variance_ratio_)}")
-    plt.plot(np.cumsum(pca.explained_variance_ratio_[:100]))
+def plot_explained_variance(PCAH):
+    print(f"Using {PCAH.pca.components_.shape[0]} components")
+    print(f"Explained variance ratio: {sum(PCAH.pca.explained_variance_ratio_)}")
+    plt.plot(np.cumsum(PCAH.pca.explained_variance_ratio_[:100]))
     plt.ylabel('Explained variance ratio')
     plt.xlabel('Number of principal components')
     plt.show()
 
-def perform_single_reprojection(query, pca, components=None, draw = False):
+def perform_single_reprojection(query, PCAH, components=None, draw = False):
     '''
     Takes one single leaf outline (point cloud) at a time
     Encodes and decode the outline, prints the reprojection error
     and draws the input and reprojection side-by-side
     '''
-    if components is None:
-        components = pca.components_.shape[0]
 
-    #original_shape = sample.shape
-    #query = sample.reshape(sample.shape[0]*sample.shape[1])
-
-    all_eigenleaves = pca.components_
-    query_weight = compress(query, all_eigenleaves[:components], pca)
-    reprojection = decompress(query_weight, all_eigenleaves[:components], pca)
-    #unrolled = reprojection.reshape(original_shape) # restack
+    weights = PCAH.compress(query, components)
+    reprojection = PCAH.decompress(weights, components)
 
     single_error = query-reprojection # distance for each individual feature
     mean_error = np.mean(single_error)
-
     print(f"Mean reprojection error at {components} components : {mean_error}")
 
     if draw:
         stacked_query, query_additional_features = reshape_coordinates_and_additional_features(query, nr_coordinates=500)
         stacked_reprojection, reprojection_additional_features = reshape_coordinates_and_additional_features(reprojection, nr_coordinates=500)
 
-        print(f'Aditional features given vs. reprojected {np.stack((query_additional_features, reprojection_additional_features))}')
-
-        cloud1 = visualise.array_to_o3d_pointcloud(stacked_query)
-        cloud2 = visualise.array_to_o3d_pointcloud(stacked_reprojection)
+        print(f'Aditional features given {query_additional_features} \n vs. reprojected {reprojection_additional_features}')
+        cloud1 = visualise.array_to_o3d_pointcloud(np.squeeze(stacked_query))
+        cloud2 = visualise.array_to_o3d_pointcloud(np.squeeze(stacked_reprojection))
         visualise.draw([cloud1, cloud2], 'test', offset = True )
     return
 
-def test_reprojection_loss(query, pca):
+def test_reprojection_loss(query, PCAH):
     '''
     Performs encoding and reprojection of a dataset
     with 1 - n components
     plots the reprojection loss by number of used components
     '''
-    #original_shape = sample.shape
-    #query = sample.reshape(sample.shape[0], sample.shape[1]*sample.shape[2])
-
-    max_components = pca.components_.shape[0]
+    max_components = PCAH.pca.components_.shape[0]
     mean_dist_errors = []
-    all_eigenleaves = pca.components_
+    all_eigenleaves = PCAH.pca.components_
     RMSEs = []
     for i in range(max_components, 0, -1):
-        query_weight = compress(query, all_eigenleaves[:i], pca)
-        reprojection = decompress(query_weight, all_eigenleaves[:i], pca)
 
-        #unrolled = reprojection.reshape(original_shape) # restack
-        #euclidean_dist_error = np.linalg.norm(query-reprojection, axis = -1) # (nr_examples x nr_points) euclidean distance between each point pair, for each example
+        weights = PCAH.compress(query, i)
+        reprojection = PCAH.decompress(weights, i)
+
         single_error = query-reprojection # (nr_examples x nr_features) distance for each individual feature, coordinates are unrolled
         single_RMSEs=np.sqrt((single_error**2).mean(axis=-1)) # One RMSE for each example
         mRMSE = np.mean(single_RMSEs) # Mean RMSE across all examples
@@ -290,19 +318,19 @@ def test_reprojection_loss(query, pca):
     plt.xlabel('Number of principal components')
     plt.show()
 
-def plot_3_components(data, pca, labels=None):
+def plot_3_components(data, PCAH, labels=None):
     '''
     Transforms a data set to feature space and plots
     the data's first three components
     '''
     coordinates, additional_features = reshape_coordinates_and_additional_features(data, nr_coordinates=500)
-    transformed = pca.transform(data)
     markers = [path.Path(leaf[:,:2]) for leaf in coordinates]
+    weights = PCAH.compress(data, PCAH.max_components)
 
     # Plot with regular markers using labels as colours
     if labels is not None:
         ax = plt.figure(figsize=(16,10)).gca(projection='3d')
-        scatterplot = ax.scatter(xs=transformed[:,0], ys=transformed[:,1], zs=transformed[:,2],c=labels[:data.shape[0],3], cmap='rainbow')
+        scatterplot = ax.scatter(xs=weights[:,0], ys=weights[:,1], zs=weights[:,2],c=labels[:data.shape[0],3], cmap='rainbow')
         ax.set_xlabel('first component')
         ax.set_ylabel('second component')
         ax.set_zlabel('third component')
@@ -312,7 +340,7 @@ def plot_3_components(data, pca, labels=None):
 
     # Plot using 2D projected leaf outline as markers, but no colours
     ax = plt.figure(figsize=(16,10)).gca(projection='3d')
-    for _m, _x, _y, _z in zip(markers, transformed[:,0], transformed[:,1], transformed[:,2]):
+    for _m, _x, _y, _z in zip(markers, weights[:,0], weights[:,1], weights[:,2]):
         scatterplot = ax.scatter(xs=_x, ys=_y, zs=_z,  marker=_m, s=100, c='#1f77b4')
     plt.tight_layout()
     ax.set_xlabel('first component')
@@ -322,19 +350,19 @@ def plot_3_components(data, pca, labels=None):
     ax.add_artist(legend1)
     plt.show()
 
-def plot_2_components(data, pca, labels=None, components=[0,1]):
+def plot_2_components(data, PCAH, labels=None, components=[0,1]):
     '''
     Transforms a data set to feature space and plots
     the data's first two components
     '''
-    transformed = pca.transform(data)
     coordinates, additional_features = reshape_coordinates_and_additional_features(data, nr_coordinates=500)
     markers = [path.Path(leaf[:,:2]) for leaf in coordinates]
+    weights = PCAH.compress(data, PCAH.max_components)
 
     # Plot with regular markers using labels as colours
     fig, ax = plt.subplots()
     if labels is not None:
-        scatterplot = ax.scatter(transformed[:,components[0]], transformed[:,components[1]],c=labels[:data.shape[0],3], cmap='rainbow')
+        scatterplot = ax.scatter(weights[:,components[0]], weights[:,components[1]],c=labels[:data.shape[0],3], cmap='rainbow')
         ax.set_xlabel('component {}'.format(components[0]))
         ax.set_ylabel('component {}'.format(components[1]))
         legend1 = ax.legend(*scatterplot.legend_elements(), title="Classes")
@@ -343,7 +371,7 @@ def plot_2_components(data, pca, labels=None, components=[0,1]):
 
     # Plot using 2D projected leaf outline as markers, but no colours
     fig, ax = plt.subplots()
-    for _m, _x, _y in zip(markers, transformed[:,components[0]], transformed[:,components[1]]):
+    for _m, _x, _y in zip(markers, weights[:,components[0]], weights[:,components[1]]):
         scatterplot = ax.scatter(_x, _y, marker=_m, s=500, c='#FFFFFF', edgecolors='#1f77b4')
     plt.tight_layout()
     ax.set_xlabel('component {}'.format(components[0]))
@@ -499,20 +527,21 @@ def recreate_artefact(data, pca):
     print(f'Feature space distance: {np.linalg.norm(query_weight-flipped_weight)}')
 
 if __name__== "__main__":
-    dir = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'pca_input')
+    directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'pca_input')
 
-    train_ds, test_ds, train_labels, test_labels, pca, transformed = get_encoding(train_split=0, dir=dir, location=True, rotation=True, scale=True, as_features=True)
+    PCAH, test_ds, test_labels = get_encoding(train_split=0, directory=directory, standardise=False, location=False, rotation=False, scale=False, as_features=False)
 
-    #plot_explained_variance(pca)
-    #test_reprojection_loss(train_ds, pca)
+    #plot_explained_variance(PCAH)
+    #perform_single_reprojection(PCAH.training_data[0], PCAH, components=50, draw=True)
+    #test_reprojection_loss(PCAH.training_data, PCAH)
 
-    #perform_single_reprojection(train_ds[0], pca, components = 50, draw=True)
+    #plot_3_components(PCAH.training_data, PCAH)
+    #plot_3_components(PCAH.training_data, PCAH, labels = PCAH.training_labels)
+    plot_2_components(PCAH.training_data, PCAH, labels = PCAH.training_labels, components = [0,1])
+
+    import pdb; pdb.set_trace()
     #ranges = new_random_leaf_from_distribution(train_ds, train_labels, pca)
     #recreate_artefact(train_ds, pca)
-
-    #plot_3_components(train_ds, pca)
-    #plot_3_components(train_ds, pca, labels = train_labels)
-    #plot_2_components(train_ds, pca, labels = train_labels, components = [0,1])
 
     #t_sne(train_ds, train_labels[:,3], label_meaning='leaf number')
     #pca_then_t_sne(train_ds, train_labels[:,3], label_meaning='leaf number')
