@@ -48,7 +48,7 @@ def make_fs_dist_matrix(data1, data2, pca, training_set, mahalanobis_dist = True
 
 def make_dist_matrix(data1, data2, training_set, mahalanobis_dist = True, draw=True):
     '''
-    Calculate the pairwise distance matrix between two data sets, using Mahalanobis ditance, without any compression/encoding.
+    Calculate the pairwise distance matrix between two data sets, using Mahalanobis or euclidean distance, without any compression/encoding.
     '''
     if training_set.shape[1]>1:
         if mahalanobis_dist:
@@ -98,16 +98,16 @@ def get_score_across_dataset(centroids, centroid_labels, outline_data, outline_l
     total_true_pairings = 0
 
     for plant in np.unique(outline_labels[:,0]): # for each plant
-        for time_step in range(np.unique(outline_labels[:,1]).size-1): # and for each time step available in the processed data
+        for time_step in range(0,np.unique(outline_labels[:,1]).size-time_gap,1): # and for each time step available in the processed data
 
             # select the subsets to compare
             c_before, c_before_labels = leaf_encoding.select_subset(centroids, centroid_labels, plant_nr = plant, timestep=time_step, day=None, leaf=None)
-            c_after, c_after_labels = leaf_encoding.select_subset(centroids, centroid_labels, plant_nr = plant, timestep=time_step+1, day=None, leaf=None)
+            c_after, c_after_labels = leaf_encoding.select_subset(centroids, centroid_labels, plant_nr = plant, timestep=time_step+time_gap, day=None, leaf=None)
             o_before, o_before_labels = leaf_encoding.select_subset(outline_data, outline_labels, plant_nr = plant, timestep=time_step, day=None, leaf=None)
-            o_after, o_after_labels = leaf_encoding.select_subset(outline_data, outline_labels, plant_nr = plant, timestep=time_step+1, day=None, leaf=None)
+            o_after, o_after_labels = leaf_encoding.select_subset(outline_data, outline_labels, plant_nr = plant, timestep=time_step+time_gap, day=None, leaf=None)
             if add_inf is not None:
                 a_before, a_before_labels = leaf_encoding.select_subset(add_inf, outline_labels, plant_nr = plant, timestep=time_step, day=None, leaf=None)
-                a_after, a_after_labels = leaf_encoding.select_subset(add_inf, outline_labels, plant_nr = plant, timestep=time_step+1, day=None, leaf=None)
+                a_after, a_after_labels = leaf_encoding.select_subset(add_inf, outline_labels, plant_nr = plant, timestep=time_step+time_gap, day=None, leaf=None)
 
             # Remove leaves that exist only in the LATER scan. The method assumes that each leaf will be present in the next time step
             # New emerging leaves are permitted, but vanishing leaves are not expected
@@ -164,7 +164,7 @@ def get_score_across_dataset(centroids, centroid_labels, outline_data, outline_l
 
     return bonn_counts, outline_counts, add_inf_counts, total_true_pairings
 
-def testing_pipeline(location=False, rotation=False, scale=False, as_features=False, trim_missing=True, components=50):
+def testing_pipeline(location=False, rotation=False, scale=False, as_features=False, trim_missing=True, components=50, time_gap=1):
     # Load data needed for Bonn method
     directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'transform_log')
     centroids, centroid_labels = get_location_info(directory) # already sorted
