@@ -190,21 +190,21 @@ class PCA_Handler:
     def fit_scaler(self):
         self.scaler = StandardScaler()
         self.scaler.fit(self.training_data)
-        self.standard_training_data = self.scaler.transform(self.training_data)
+        self.standard_training_data = self.scaler.transform(self.training_data, copy=True)
         return
 
     def fit_pca(self):
         self.pca = PCA()
         if self.standard_flag:
             self.pca.fit(self.standard_training_data)
-            self.transformed_training_data = self.pca.fit_transform(self.standard_training_data)
+            self.transformed_training_data = self.pca.transform(self.standard_training_data)
         else:
             self.pca.fit(self.training_data)
-            self.transformed_training_data = self.pca.fit_transform(self.training_data)
+            self.transformed_training_data = self.pca.transform(self.training_data)
         self.max_components = self.pca.components_.shape[0]
         return
 
-    def compress(self, data, nr_components):
+    def compress(self, data, nr_components=None):
         all_components = self.pca.components_
         if nr_components is None:
             nr_components = self.default_component_nr
@@ -212,16 +212,23 @@ class PCA_Handler:
             if len(data.shape) == 1:
                 data = data.reshape(1, -1) # necessary if only one feature vectore is passed instead of a matrix of multiple examples
             data = self.scaler.transform(data)
-        weights = all_components[:nr_components] @ (data - self.pca.mean_).T
-        return weights
 
-    def decompress(self, weights, nr_components):
+        transformed = np.dot((data - self.pca.mean_), self.pca.components_[:nr_components].T)
+        #weights = all_components @ (data - self.pca.mean_).T # this is the transpose of the above
+        # Preivously I have gotten the transpose of the sklearn implementation
+        return transformed
+
+    def decompress(self, weights, nr_components=None):
         all_components = self.pca.components_
         if nr_components is None:
             nr_components = self.default_component_nr
 
-        projection = weights.T @ all_components[:nr_components] + self.pca.mean_
+        projection = np.dot(weights, self.pca.components_[:nr_components]) + self.pca.mean_
+        # projection = weights.T @ all_components[:nr_components] + self.pca.mean_
+
         if self.standard_flag:
+            if len(projection.shape) == 1:
+                projection = projection.reshape(1, -1) # necessary if only one feature vectore is passed instead of a matrix of multiple examples
             output_data = self.scaler.inverse_transform(projection)
         else:
             output_data = projection
@@ -247,7 +254,7 @@ def get_encoding(train_split=0, directory=None, standardise=True, location=False
         input_data = train_ds.reshape(train_ds.shape[0], train_ds.shape[1]*train_ds.shape[2])
 
     input_data, input_labels = util.sort_examples(input_data, train_labels) #sort
-    PCAH = PCA_Handler(input_data, labels, standard=standardise)
+    PCAH = PCA_Handler(input_data, input_labels, standard=standardise)
     return PCAH, test_ds, test_labels
 
 '''
@@ -380,36 +387,37 @@ def plot_2_components(data, PCAH, labels=None, components=[0,1]):
     ax.add_artist(legend1)
     plt.show()
 
-def new_random_leaf_from_distribution(query, labels, pca, draw=True):
+def new_random_leaf_from_distribution(query, labels, PCAH, components=50, draw=True):
     '''
     Gets the distributions for all principal components
     Randomly samples components from their distributions to create a new plausible random leaf
     '''
-    #original_shape = data.shape
-    #query = data.reshape(data.shape[0], data.shape[1]*data.shape[2])
-    components = 50
-    all_eigenleaves = pca.components_
-    query_weight = compress(query, all_eigenleaves[:components], pca).T #(examples x components)
-    ranges = np.asarray([np.min(query_weight, axis=0),np.max(query_weight, axis=0)])
+    weights = PCAH.compress(query, components)
+    # components = 50
+    # all_eigenleaves = pca.components_
+    # query_weight = compress(query, all_eigenleaves[:components], pca).T #(examples x components)
+
+    ranges = np.asarray([np.min(weights, axis=0),np.max(weights, axis=0)])
     if draw:
-        plt.boxplot(query_weight)
+        plt.boxplot(weights)
         plt.title("Boxplots of Value distributions for the first 50 components")
         plt.show()
-        plt.hist(query_weight[:,0], 20)
+        plt.hist(weights[:,0], 20)
         plt.title("Histogram of feature values on the first principal component")
         plt.show()
-        plt.hist(query_weight[:,1], 20)
+        plt.hist(weights[:,1], 20)
         plt.title("Histogram of feature values on the second principal component")
         plt.show()
 
     # random new leaf
     # sample each feature randomly from the existing feature vectors
-    new_leaf = np.asarray([query_weight[np.random.choice(query_weight.shape[0]),i] for i in range(query_weight.shape[1])])
-    reprojection = decompress(new_leaf, all_eigenleaves[:50], pca)
+    new_leaf = np.asarray([weights[np.random.choice(weights.shape[0]),i] for i in range(weights.shape[1])])
+    reprojection = PCAH.decompress(new_leaf, components)
+
     random_leaf, random_additional_features = reshape_coordinates_and_additional_features(reprojection, nr_coordinates=500)
-    mean_leaf, mean_additional_features = reshape_coordinates_and_additional_features(pca.mean_, nr_coordinates=500)
-    cloud = visualise.array_to_o3d_pointcloud(random_leaf)
-    cloud2 = visualise.array_to_o3d_pointcloud(mean_leaf)
+    mean_leaf, mean_additional_features = reshape_coordinates_and_additional_features(PCAH.pca.mean_, nr_coordinates=500)
+    cloud = visualise.array_to_o3d_pointcloud(np.squeeze(random_leaf))
+    cloud2 = visualise.array_to_o3d_pointcloud(np.squeeze(mean_leaf))
     if draw:
         visualise.draw2([cloud, cloud2], 'test', offset = True )
     return ranges
@@ -445,7 +453,7 @@ def t_sne(data, labels=None, label_meaning=None):
             scatterplot = ax.scatter(_x, _y, marker=_m, s=500, c='#FFFFFF', edgecolors='#1f77b4')
     plt.show()
 
-def pca_then_t_sne(data, labels=None, label_meaning=None, nr_components=50):
+def pca_then_t_sne(data, PCAH, labels=None, label_meaning=None, nr_components=50):
     '''
     Performs tSNE on the extracted feature components by PCA.
     Intended to use only with coordinates normalised in position, rotation, and scale.
@@ -453,10 +461,8 @@ def pca_then_t_sne(data, labels=None, label_meaning=None, nr_components=50):
     '''
     #tsne on the pca extracted feature components
     tsne = TSNE()
-    all_eigenleaves = pca.components_
-    query_weight = compress(data, all_eigenleaves[:nr_components], pca)
-    query_weight.T
-    X_embedded = tsne.fit_transform(query_weight.T)
+    weights = PCAH.compress(data, nr_components)
+    X_embedded = tsne.fit_transform(weights.T)
     coordinates, additional_features = reshape_coordinates_and_additional_features(data, nr_coordinates=500)
     markers = [path.Path(leaf[:,:2]) for leaf in coordinates]
 
@@ -481,10 +487,10 @@ def pca_then_t_sne(data, labels=None, label_meaning=None, nr_components=50):
     plt.show()
     return
 
-def analyse_feature_space_clusters(data, labels, pca, nr_clusters=4):
-    transformed = pca.transform(data)
-    kmeans = KMeans(n_clusters=nr_clusters, random_state=0).fit(transformed)
-    plt.scatter(transformed[:,0], transformed[:,1],c=kmeans.labels_)
+def analyse_feature_space_clusters(data, labels, PCAH, nr_clusters=4):
+    weights = PCAH.compress(data, PCAH.max_components)
+    kmeans = KMeans(n_clusters=nr_clusters, random_state=0).fit(weights)
+    plt.scatter(weights[:,0], weights[:,1],c=kmeans.labels_)
     plt.show()
 
     fig, axs = plt.subplots(3,3)
@@ -514,42 +520,47 @@ def analyse_feature_space_clusters(data, labels, pca, nr_clusters=4):
     axs[2][2].set_title('Leaf depth in z direction')
     plt.show()
 
-def recreate_artefact(data, pca):
+def recreate_artefact(data, PCAH):
     '''
     Recreates a sampling artefact, which makes the same shapes look dissimilar in PCA feautre space,
     if their extracted boundary chains are sampled in opposite direction (clockwise and counter-clockwise)
     '''
     sample = data[1]
-    all_eigenleaves = pca.components_
     sample_flipped = np.flip(sample, 0)
-    flipped_weight = compress(sample_flipped, all_eigenleaves[:50], pca)
-    query_weight = compress(sample, all_eigenleaves[:50], pca)
-    print(f'Feature space distance: {np.linalg.norm(query_weight-flipped_weight)}')
+    weight = PCAH.compress(sample, 50)
+    flipped_weight = PCAH.compress(sample_flipped, 50)
+
+    dist_same = leaf_matching.make_fs_dist_matrix(sample, sample, PCAH, mahalanobis_dist = True, draw=False, components=50)
+    dist_flipped = leaf_matching.make_fs_dist_matrix(sample, sample_flipped, PCAH, mahalanobis_dist = True, draw=False, components=50)
+    print(f'Feature space distance: {dist_flipped}')
 
 if __name__== "__main__":
     directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'pca_input')
 
-    PCAH, test_ds, test_labels = get_encoding(train_split=0, directory=directory, standardise=False, location=False, rotation=False, scale=False, as_features=False)
+    PCAH, test_ds, test_labels = get_encoding(train_split=0, directory=directory, standardise=True, location=False, rotation=False, scale=False, as_features=False)
 
+    # Verify that scaled and re-scaled data is the same as the original
+    np.testing.assert_array_almost_equal(PCAH.scaler.inverse_transform(PCAH.scaler.transform(PCAH.training_data[:2])), PCAH.training_data[:2])
+    # Verify that the compressed and decompressed data is the same as the original when using ALL components
+    np.testing.assert_array_almost_equal(PCAH.training_data[:2], PCAH.decompress(PCAH.compress(PCAH.training_data[:2], PCAH.max_components),PCAH.max_components))
     #plot_explained_variance(PCAH)
-    #perform_single_reprojection(PCAH.training_data[0], PCAH, components=50, draw=True)
+    #perform_single_reprojection(PCAH.training_data[0], PCAH, components=5, draw=True)
     #test_reprojection_loss(PCAH.training_data, PCAH)
 
     #plot_3_components(PCAH.training_data, PCAH)
     #plot_3_components(PCAH.training_data, PCAH, labels = PCAH.training_labels)
-    plot_2_components(PCAH.training_data, PCAH, labels = PCAH.training_labels, components = [0,1])
+    #plot_2_components(PCAH.training_data, PCAH, labels = PCAH.training_labels, components = [0,1])
 
-    import pdb; pdb.set_trace()
-    #ranges = new_random_leaf_from_distribution(train_ds, train_labels, pca)
-    #recreate_artefact(train_ds, pca)
+    #ranges = new_random_leaf_from_distribution(PCAH.training_data, PCAH.training_labels, PCAH)
 
-    #t_sne(train_ds, train_labels[:,3], label_meaning='leaf number')
-    #pca_then_t_sne(train_ds, train_labels[:,3], label_meaning='leaf number')
-    #t_sne(train_ds, label_meaning='leaf number')
-    #pca_then_t_sne(train_ds, label_meaning='leaf number')
+    #t_sne(PCAH.training_data, PCAH.training_labels[:,3], label_meaning='leaf number')
+    #pca_then_t_sne(PCAH.training_data, PCAH, labels=PCAH.training_labels[:,3], label_meaning='leaf number')
+    #t_sne(PCAH.training_data, label_meaning='leaf number')
+    #pca_then_t_sne(PCAH.training_data, PCAH, label_meaning='leaf number')
 
-    #single_plant_leaves, single_plant_labels= select_subset(train_ds, train_labels, plant_nr = 6)
+    #single_plant_leaves, single_plant_labels= select_subset(PCAH.training_data, PCAH.training_labels, plant_nr = 6)
     #t_sne(single_plant_leaves, single_plant_labels[:,3], label_meaning='leaf number')
-    #pca_then_t_sne(single_plant_leaves, single_plant_labels[:,3], label_meaning='leaf number')
+    #pca_then_t_sne(single_plant_leaves, PCAH, single_plant_labels[:,3], label_meaning='leaf number')
 
-    #analyse_feature_space_clusters(train_ds, train_labels, pca)
+    #analyse_feature_space_clusters(PCAH.training_data, PCAH.training_labels, PCAH)
+    #recreate_artefact(PCAH.training_data, PCAH)

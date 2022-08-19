@@ -24,23 +24,24 @@ def get_location_info(directory):
     sorted_centroids, sorted_labels = util.sort_examples(centroids, labels)
     return sorted_centroids, sorted_labels
 
-def make_fs_dist_matrix(data1, data2, pca, training_set, mahalanobis_dist = True, draw=True, components=50):
+def make_fs_dist_matrix(data1, data2, PCAH, mahalanobis_dist = True, draw=True, components=50):
     '''
     Calculate the pairwise distance matrix between two data sets.
     Usually to calculate the feature space distance between the same leaves before and after a time skip.
     Can also plot the matrix as a heatmap.
     '''
     # plots the pairwise feature space  distance matrix
-    all_eigenleaves = pca.components_
-    query_weight1 = leaf_encoding.compress(data1, all_eigenleaves[:components], pca)
-    query_weight2 = leaf_encoding.compress(data2, all_eigenleaves[:components], pca)
+    query_weight1 = PCAH.compress(data1, components)
+    query_weight2 = PCAH.compress(data2, components)
+
     if mahalanobis_dist:
         # need VI, the inverse covariance matrix for Mahalanobis. It is calculated across the entire training set.
         # By default it would be calculated from the inputs, but only works if nr_inputs > nr_features
-        training_compressed = leaf_encoding.compress(training_set, all_eigenleaves[:components], pca)
-        Vi = np.linalg.inv(np.cov(training_compressed))
-        dist =  cdist(query_weight1.T,query_weight2.T,'mahalanobis', VI=Vi)
+        training_compressed = PCAH.compress(PCAH.training_data, components)
+        Vi = np.linalg.inv(np.cov(training_compressed.T))
+        dist =  cdist(query_weight1,query_weight2,'mahalanobis', VI=Vi)
     else:
+        # Euclidean distance
         dist = distance_matrix(query_weight1.T, query_weight2.T)
     if draw:
         plot_heatmap(dist, show_values=True)
@@ -72,7 +73,7 @@ def compute_assignment(dist_mat, label_set_1, label_set_2):
     match = (label_set_1[assignment[0]], label_set_2[assignment[1]])
     return match, np.array(list(zip(match[0],match[1])))
 
-def get_score_across_dataset(centroids, centroid_labels, outline_data, outline_labels, pca, components=50, add_inf=None, trim_missing=True, plotting=False):
+def get_score_across_dataset(centroids, centroid_labels, outline_data, outline_labels, PCAH, components=50, add_inf=None, trim_missing=True, plotting=False, time_gap=1):
     '''
     Iterate over the whole given data set, calculating feature space distance and best assignment of leaves for each time skip
     using both our method (outline shape) and the Bonn method (centroid location).
@@ -122,7 +123,7 @@ def get_score_across_dataset(centroids, centroid_labels, outline_data, outline_l
 
             # Now perform the matching step using both methods
             centroid_dist = make_dist_matrix(c_before, c_after, centroids, mahalanobis_dist = False, draw=False)
-            outline_dist = make_fs_dist_matrix(o_before, o_after, pca, outline_data, draw=False, components=components)
+            outline_dist = make_fs_dist_matrix(o_before, o_after, PCAH, draw=False, components=components)
             if add_inf is not None:
                 add_inf_dist = make_dist_matrix(a_before, a_after, add_inf, mahalanobis_dist = True, draw=False)
                 a_matches = compute_assignment(add_inf_dist, a_before_labels, a_after_labels)[1]
@@ -164,22 +165,20 @@ def get_score_across_dataset(centroids, centroid_labels, outline_data, outline_l
 
     return bonn_counts, outline_counts, add_inf_counts, total_true_pairings
 
-def testing_pipeline(location=False, rotation=False, scale=False, as_features=False, trim_missing=True, components=50, time_gap=1):
+def testing_pipeline(location=False, rotation=False, scale=False, as_features=False, standardise = True, trim_missing=True, components=50, time_gap=1):
     # Load data needed for Bonn method
     directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'transform_log')
     centroids, centroid_labels = get_location_info(directory) # already sorted
 
     # Load data needed for my method
     directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'pca_input')
-    train_ds, test_ds, train_labels, test_labels, pca, transformed = leaf_encoding.get_encoding(train_split=0, dir=directory, location=location, rotation=rotation, scale=scale, as_features=as_features)
-
-    outline_data, outline_labels = util.sort_examples(train_ds, train_labels)
+    PCAH, test_ds, test_labels = leaf_encoding.get_encoding(train_split=0, directory=directory, standardise=standardise, location=location, rotation=rotation, scale=scale, as_features=as_features)
     if as_features:
-        coordinates, additional_info = leaf_encoding.reshape_coordinates_and_additional_features(outline_data, nr_coordinates=500)
+        coordinates, additional_info = leaf_encoding.reshape_coordinates_and_additional_features(PCAH.training_data, nr_coordinates=500)
     else:
         additional_info = None
 
-    bonn_count, our_count, add_inf_count, total = get_score_across_dataset(centroids, centroid_labels, outline_data, outline_labels, pca, components=components, add_inf = additional_info, trim_missing=trim_missing, plotting=False)
+    bonn_count, our_count, add_inf_count, total = get_score_across_dataset(centroids, centroid_labels, PCAH.training_data, PCAH.training_labels, PCAH, components=components, add_inf = additional_info, trim_missing=trim_missing, plotting=False)
     return bonn_count, our_count, add_inf_count, total
 
 def tests():
@@ -248,7 +247,7 @@ def tests():
     totals = []
     for test, descr in zip(conditions, descriptions):
         print('Running ' + descr)
-        bonn_count, our_count, add_inf_count, total = testing_pipeline(location=test[0], rotation=test[1], scale=test[2], as_features=test[3], trim_missing=False, components=22)
+        bonn_count, our_count, add_inf_count, total = testing_pipeline(location=test[0], rotation=test[1], scale=test[2], as_features=test[3], standardise = True, trim_missing=False, components=22, time_gap=1)
         our_counts.append(our_count)
         bonn_counts.append(bonn_count)
         add_inf_counts.append(add_inf_count)
@@ -264,7 +263,6 @@ def tests():
     print(np.asarray(totals))
 
     import pdb; pdb.set_trace()
-
 
 ''' PLOTTING '''
 
@@ -329,8 +327,6 @@ def plot_heatmap(data, labels=None, ax = None, show_values=False):
         ax.set_xticks(labels)
         ax.set_yticks(labels)
     return ax
-
-
 
 if __name__== "__main__":
 
