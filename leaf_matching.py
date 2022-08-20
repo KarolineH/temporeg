@@ -240,14 +240,14 @@ def tests():
     descriptions.append(f'Test {i}: Coordinates + location + rotation + scale given intrinsic to outline coordinates ')
     i+=1
 
-    # Could run this routine this with different datasets as well
+    # Could run this routine with different datasets as well
     our_counts = []
     bonn_counts = []
     add_inf_counts = []
     totals = []
     for test, descr in zip(conditions, descriptions):
         print('Running ' + descr)
-        bonn_count, our_count, add_inf_count, total = testing_pipeline(location=test[0], rotation=test[1], scale=test[2], as_features=test[3], standardise = True, trim_missing=False, components=22, time_gap=1)
+        bonn_count, our_count, add_inf_count, total = testing_pipeline(location=test[0], rotation=test[1], scale=test[2], as_features=test[3], standardise = False, trim_missing=False, components=22, time_gap=1)
         our_counts.append(our_count)
         bonn_counts.append(bonn_count)
         add_inf_counts.append(add_inf_count)

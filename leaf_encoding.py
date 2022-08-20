@@ -208,7 +208,9 @@ class PCA_Handler:
         all_components = self.pca.components_
         if nr_components is None:
             nr_components = self.default_component_nr
+
         if self.standard_flag:
+            # Standardise
             if len(data.shape) == 1:
                 data = data.reshape(1, -1) # necessary if only one feature vectore is passed instead of a matrix of multiple examples
             data = self.scaler.transform(data)
@@ -543,6 +545,7 @@ if __name__== "__main__":
     np.testing.assert_array_almost_equal(PCAH.scaler.inverse_transform(PCAH.scaler.transform(PCAH.training_data[:2])), PCAH.training_data[:2])
     # Verify that the compressed and decompressed data is the same as the original when using ALL components
     np.testing.assert_array_almost_equal(PCAH.training_data[:2], PCAH.decompress(PCAH.compress(PCAH.training_data[:2], PCAH.max_components),PCAH.max_components))
+    import pdb; pdb.set_trace()
     #plot_explained_variance(PCAH)
     #perform_single_reprojection(PCAH.training_data[0], PCAH, components=5, draw=True)
     #test_reprojection_loss(PCAH.training_data, PCAH)
