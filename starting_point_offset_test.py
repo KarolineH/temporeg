@@ -16,12 +16,11 @@ Turns out at about 40-odd points offset (less than 10% of the way around) the di
 
 # Load data and fit pca
 directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'pca_input')
-train_ds, test_ds, train_labels, test_labels, pca, transformed = leaf_encoding.get_encoding(train_split=0, dir=directory, location=False, rotation=False, scale=False, as_features=True)
-data, labels = util.sort_examples(train_ds, train_labels) # sort
+PCAH, test_ds, test_labels = leaf_encoding.get_encoding(train_split=0, directory=directory, standardise=True, location=False, rotation=False, scale=False, as_features=False)
 
-subset, sub_labels = leaf_encoding.select_subset(data, labels, plant_nr = 0, timestep=4, leaf=None)
+subset, sub_labels = leaf_encoding.select_subset(PCAH.training_data, PCAH.training_labels, plant_nr = 0, timestep=4, leaf=None)
 selected_leaves = subset[[0,5],:] # leaf 2 and 7
-dist = leaf_matching.make_dist_matrix(selected_leaves, selected_leaves, pca, draw=False, components=200)
+dist = leaf_matching.make_fs_dist_matrix(selected_leaves, selected_leaves, PCAH, mahalanobis_dist = True, draw=False, components=50)
 
 # shift
 stacked, additional_features = leaf_encoding.reshape_coordinates_and_additional_features(selected_leaves, nr_coordinates=500)
@@ -41,8 +40,7 @@ if additional_features.shape[1] > 0:
     add_f = np.concatenate((add_f, [additional_features[1]]), axis = 0)
     all_outlines = np.concatenate((all_outlines, add_f), axis=1)
 
-dist = leaf_matching.make_dist_matrix(all_outlines, all_outlines, pca, draw=True, components=200)
-
-clouds = [visualise.array_to_o3d_pointcloud(outline) for outline in all_outlines]
+dist = leaf_matching.make_fs_dist_matrix(all_outlines, all_outlines, PCAH, mahalanobis_dist = True, draw=True, components=50)
+clouds = [visualise.array_to_o3d_pointcloud(leaf_encoding.reshape_coordinates_and_additional_features(outline, nr_coordinates=500)[0]) for outline in all_outlines]
 visualise.draw2(clouds, "test_shapes", offset=True)
 import pdb; pdb.set_trace()

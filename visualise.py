@@ -99,16 +99,16 @@ def set_axes_equal(ax):
     ax.set_ylim3d([y_middle - plot_radius, y_middle + plot_radius])
     ax.set_zlim3d([z_middle - plot_radius, z_middle + plot_radius])
 
-def assemble_geometries(dir, visualise=True, plant_nr=0, timestep=3, leaf_nr=3):
+def assemble_geometries(dir, standardise=True, visualise=True, plant_nr=0, timestep=3, leaf_nr=3):
     '''
     This loads all data necessary to later create a plot of the whole preprocessing pipeline,
     stacking multiple geometry representations into the same 3D plot.
     Includes the originap point cloud, meshed object, original and cleaned boundary objects, and the sampled outline (PCA input).
     '''
     pca_input_directory = os.path.join(dir, 'pca_input')
-    train_ds, test_ds, train_labels, test_labels, pca, transformed = leaf_encoding.get_encoding(train_split=0, dir=pca_input_directory, location=False, rotation=False, scale=False, as_features=False)
-    data, labels = util.sort_examples(train_ds, train_labels) #sort
-    subset, subset_labels = leaf_encoding.select_subset(data, labels, plant_nr=plant_nr, timestep=timestep, leaf=leaf_nr)
+    PCAH, test_ds, test_labels = leaf_encoding.get_encoding(train_split=0, directory=pca_input_directory, standardise=standardise, location=False, rotation=False, scale=False, as_features=False)
+
+    subset, subset_labels = leaf_encoding.select_subset(PCAH.training_data, PCAH.training_labels, plant_nr=plant_nr, timestep=timestep, leaf=leaf_nr)
     subset_labels = subset_labels[0]
 
     if subset.shape[0] > 0:
@@ -184,19 +184,20 @@ def draw2(geometries, name, offset = False, labels=None):
     app.add_window(vis)
     app.run()
 
-def timestep_comparison(directory=None):
+def timestep_comparison(directory=None, standardise=True):
     '''
     Plots all leaf outlines of one timestep at a time, cycling through all plants and time-steps.
     '''
     if directory is None:
         directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'pca_input')
-    train_ds, test_ds, train_labels, test_labels, pca, transformed = leaf_encoding.get_encoding(train_split=0, dir=directory, location=False, rotation=False, scale=False, as_features=False)
-    data, labels = util.sort_examples(train_ds, train_labels)
+
+    PCAH, test_ds, test_labels = leaf_encoding.get_encoding(train_split=0, directory=directory, standardise=standardise, location=False, rotation=False, scale=False, as_features=False)
+    labels = PCAH.training_labels
 
     for plant in np.unique(labels[:,0]):
         timesteps = np.unique(labels[labels[:,0] == plant][:,1])
         for i,time_step in enumerate(timesteps):
-            before, before_labels = leaf_encoding.select_subset(data, labels, plant_nr = plant, timestep=time_step, leaf=None)
+            before, before_labels = leaf_encoding.select_subset(PCAH.training_data, labels, plant_nr = plant, timestep=time_step, leaf=None)
             #after, after_labels = leaf_encoding.select_subset(data, labels, plant_nr = plant, timestep=timesteps[i+1], leaf=None)
 
             stacked_before, before_add_f = leaf_encoding.reshape_coordinates_and_additional_features(before, nr_coordinates=500)
@@ -212,12 +213,12 @@ def same_leaf_across_time(directory=None):
     '''
     if directory is None:
         directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'pca_input')
-    train_ds, test_ds, train_labels, test_labels, pca, transformed = leaf_encoding.get_encoding(train_split=0, dir=directory, location=False, rotation=False, scale=False, as_features=False)
-    data, labels = util.sort_examples(train_ds, train_labels)
+    PCAH, test_ds, test_labels = leaf_encoding.get_encoding(train_split=0, directory=directory, standardise=standardise, location=False, rotation=False, scale=False, as_features=False)
+    labels = PCAH.training_labels
 
     for plant in np.unique(labels[:,0]):
         for leaf in np.unique(labels[:,-1]):
-            subset, sub_labels = leaf_encoding.select_subset(data, labels, plant_nr = plant, leaf=leaf)
+            subset, sub_labels = leaf_encoding.select_subset(PCAH.training_data, labels, plant_nr = plant, leaf=leaf)
             stacked, add_f = leaf_encoding.reshape_coordinates_and_additional_features(subset, nr_coordinates=500)
             clouds = [array_to_o3d_pointcloud(outline) for outline in stacked]
             draw(clouds, "leaf number {}".format(leaf), offset=True, labels=sub_labels[:,1])
@@ -227,4 +228,4 @@ if __name__== "__main__":
     #same_leaf_across_time()
 
     data_directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed')
-    geometries = assemble_geometries(data_directory, visualise=True, plant_nr=0, timestep=0, leaf_nr=3)
+    geometries = assemble_geometries(data_directory, standardise = True, visualise=True, plant_nr=0, timestep=0, leaf_nr=3)
