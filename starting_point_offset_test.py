@@ -16,7 +16,7 @@ Turns out at about 40-odd points offset (less than 10% of the way around) the di
 
 # Load data and fit pca
 directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'pca_input')
-PCAH, test_ds, test_labels = leaf_encoding.get_encoding(train_split=0, directory=directory, standardise=True, location=False, rotation=False, scale=False, as_features=False)
+PCAH, test_ds, test_labels = leaf_encoding.get_encoding(train_split=0, random_split=False, directory=directory, standardise=True, location=False, rotation=False, scale=False, as_features=False)
 
 subset, sub_labels = leaf_encoding.select_subset(PCAH.training_data, PCAH.training_labels, plant_nr = 0, timestep=4, leaf=None)
 selected_leaves = subset[[0,5],:] # leaf 2 and 7

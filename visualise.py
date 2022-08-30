@@ -106,7 +106,7 @@ def assemble_geometries(dir, standardise=True, visualise=True, plant_nr=0, times
     Includes the originap point cloud, meshed object, original and cleaned boundary objects, and the sampled outline (PCA input).
     '''
     pca_input_directory = os.path.join(dir, 'pca_input')
-    PCAH, test_ds, test_labels = leaf_encoding.get_encoding(train_split=0, directory=pca_input_directory, standardise=standardise, location=False, rotation=False, scale=False, as_features=False)
+    PCAH, test_ds, test_labels = leaf_encoding.get_encoding(train_split=0, random_split=False, directory=pca_input_directory, standardise=standardise, location=False, rotation=False, scale=False, as_features=False)
 
     subset, subset_labels = leaf_encoding.select_subset(PCAH.training_data, PCAH.training_labels, plant_nr=plant_nr, timestep=timestep, leaf=leaf_nr)
     subset_labels = subset_labels[0]
@@ -191,7 +191,7 @@ def timestep_comparison(directory=None, standardise=True):
     if directory is None:
         directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'pca_input')
 
-    PCAH, test_ds, test_labels = leaf_encoding.get_encoding(train_split=0, directory=directory, standardise=standardise, location=False, rotation=False, scale=False, as_features=False)
+    PCAH, test_ds, test_labels = leaf_encoding.get_encoding(train_split=0, random_split=False, directory=directory, standardise=standardise, location=False, rotation=False, scale=False, as_features=False)
     labels = PCAH.training_labels
 
     for plant in np.unique(labels[:,0]):
@@ -213,7 +213,7 @@ def same_leaf_across_time(directory=None):
     '''
     if directory is None:
         directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'pca_input')
-    PCAH, test_ds, test_labels = leaf_encoding.get_encoding(train_split=0, directory=directory, standardise=standardise, location=False, rotation=False, scale=False, as_features=False)
+    PCAH, test_ds, test_labels = leaf_encoding.get_encoding(train_split=0, random_split=False, directory=directory, standardise=standardise, location=False, rotation=False, scale=False, as_features=False)
     labels = PCAH.training_labels
 
     for plant in np.unique(labels[:,0]):

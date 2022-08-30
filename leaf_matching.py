@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.cm as cm
+import pandas as pd
 
 from scipy.spatial import distance_matrix
 from scipy.spatial.distance import cdist
@@ -55,12 +56,14 @@ def make_dist_matrix(data1, data2, training_set, mahalanobis_dist = True, draw=T
         if mahalanobis_dist:
             # need VI, the inverse covariance matrix for Mahalanobis. It is calculated across the entire training set.
             # By default it would be calculated from the inputs, but only works if nr_inputs > nr_features
-            Vi = np.linalg.inv(np.cov(training_set.T))
+            Vi = np.linalg.inv(np.cov(training_set.T)).T
             dist =  cdist(data1,data2,'mahalanobis', VI=Vi)
         else:
-            dist = distance_matrix(data1, data2)
+            dist = cdist(data1, data2, 'euclidean')
     else:
-        dist = distance_matrix(data1, data2)
+        # If only 1 feature is given, we use the Euclidean distance. It is directly proportional to the mahalanobis distance for a single variable.
+        # print('Using Euclidean distance, because only one feature was used')
+        dist = cdist(data1, data2, 'euclidean')
     if draw:
         plot_heatmap(dist, show_values=True)
     return dist
@@ -71,7 +74,7 @@ def compute_assignment(dist_mat, label_set_1, label_set_2):
     '''
     assignment = linear_sum_assignment(dist_mat)
     match = (label_set_1[assignment[0]], label_set_2[assignment[1]])
-    return match, np.array(list(zip(match[0],match[1])))
+    return assignment, match, np.array(list(zip(match[0],match[1])))
 
 def get_score_across_dataset(centroids, centroid_labels, outline_data, outline_labels, PCAH, components=50, add_inf=None, trim_missing=True, plotting=False, time_gap=1):
     '''
@@ -93,10 +96,13 @@ def get_score_across_dataset(centroids, centroid_labels, outline_data, outline_l
 
     # Loop over all pairs of time steps
     # Count all posisble true matches, the actual number of true matches, and 3 types of mistakes for each method
-    bonn_counts = [0,0,0,0,0] # true matches, true mistake, open before mistake, open after mistake, open open mistake
-    outline_counts = [0,0,0,0,0]
-    add_inf_counts = [0,0,0,0,0]
-    total_true_pairings = 0
+    # x = number of matches found, fp = false positive matches, o = open-to-open matches, distance matrix
+    bonn_scores = [[],[],[],[],[],[]] # x, fp, o, dist_x, dist_fp, dist_o
+    outline_scores = [[],[],[],[],[],[]]
+    add_inf_scores = [[],[],[],[],[],[]]
+    nr_of_leaves = [] # how many matches were found, dictated by smaller nr of leaves at time t or t+1
+    pairings_calculated = []
+    total_true_pairings = [] # number of true pairing that could have been found
 
     for plant in np.unique(outline_labels[:,0]): # for each plant
         for time_step in range(0,np.unique(outline_labels[:,1]).size-time_gap,1): # and for each time step available in the processed data
@@ -109,6 +115,9 @@ def get_score_across_dataset(centroids, centroid_labels, outline_data, outline_l
             if add_inf is not None:
                 a_before, a_before_labels = leaf_encoding.select_subset(add_inf, outline_labels, plant_nr = plant, timestep=time_step, day=None, leaf=None)
                 a_after, a_after_labels = leaf_encoding.select_subset(add_inf, outline_labels, plant_nr = plant, timestep=time_step+time_gap, day=None, leaf=None)
+            if not nr_of_leaves:
+                nr_of_leaves.append(c_before.shape[0])
+            nr_of_leaves.append(c_after.shape[0])
 
             # Remove leaves that exist only in the LATER scan. The method assumes that each leaf will be present in the next time step
             # New emerging leaves are permitted, but vanishing leaves are not expected
@@ -126,44 +135,83 @@ def get_score_across_dataset(centroids, centroid_labels, outline_data, outline_l
             outline_dist = make_fs_dist_matrix(o_before, o_after, PCAH, draw=False, components=components)
             if add_inf is not None:
                 add_inf_dist = make_dist_matrix(a_before, a_after, add_inf, mahalanobis_dist = True, draw=False)
-                a_matches = compute_assignment(add_inf_dist, a_before_labels, a_after_labels)[1]
+                a_assignments, temp_match, a_matches = compute_assignment(add_inf_dist, a_before_labels, a_after_labels)
             else:
+                a_assignments = None
+                add_inf_dist = None
                 a_matches = None
 
-            c_matches = compute_assignment(centroid_dist, c_before_labels, c_after_labels)[1]
-            o_matches = compute_assignment(outline_dist, o_before_labels, o_after_labels)[1]
+            c_assignments, temp_match, c_matches = compute_assignment(centroid_dist, c_before_labels, c_after_labels)
+            o_assignments, temp_match, o_matches = compute_assignment(outline_dist, o_before_labels, o_after_labels)
 
             if plotting:
                 plant_id = str(c_after_labels[0,:-1])
                 plot_bonn_assignment(c_before, c_after, c_before_labels, c_after_labels, c_matches, title=plant_id)
 
+
             ''' SCORING'''
             # count total possible correct assignments (true positives)
             true_pairs = np.intersect1d(c_before_labels[:,-1],c_after_labels[:,-1])
-            total_true_pairings += true_pairs.shape[0]
+            total_true_pairings.append(true_pairs.shape[0])
+            pairings_calculated.append(len(c_matches))
 
-            only_before = np.setdiff1d(c_before_labels[:,-1],c_after_labels[:,-1])
-            only_after = np.setdiff1d(c_after_labels[:,-1],c_before_labels[:,-1])
-
-            for method, scores in zip([c_matches, o_matches, a_matches],[bonn_counts, outline_counts, add_inf_counts]):
+            for method, assignment, scores, distances in zip([c_matches, o_matches, a_matches],[c_assignments, o_assignments, a_assignments],[bonn_scores, outline_scores, add_inf_scores],[centroid_dist, outline_dist, add_inf_dist]):
                 if method is not None:
-                    for pair in method:
+                    x = 0
+                    fp = 0
+                    o = 0
+                    x_dist = []
+                    fp_dist = []
+                    o_dist = []
+                    #scores[3].append(method[:,:,-1])
+                    #scores[4].append(np.asarray(assignment))
+                    #scores[5].append(distances)
+                    for i,pair in enumerate(method):
                         if pair[0,-1] == pair[1,-1]:
                             # A true match is found
-                            scores[0] += 1
-                        elif pair[0,-1] in true_pairs and pair[1,-1] in true_pairs:
-                            # Two leaves from existing pairs have been mistakenly matched
-                            scores[1] += 1
-                        elif pair[0,-1] in true_pairs or pair[1,-1] in true_pairs:
+                            x += 1
+                            x_dist.append(distances[assignment[0][i], assignment[1][i]])
+                        elif (pair[0,-1] in true_pairs) ^ (pair[1,-1] in true_pairs):
                             # One leaf from an existing pair was mistakenly matched to an unpaired leaf
-                            if pair[0,-1] in only_before:
-                                scores[2] += 1
-                            elif pair[1,-1] in only_after:
-                                scores[3] += 1
-                        else:
-                            scores[4] += 1
+                            fp += 1
+                            fp_dist.append(distances[assignment[0][i], assignment[1][i]])
+                        elif pair[0,-1] not in true_pairs and pair[1,-1] not in true_pairs:
+                            o += 1
+                            o_dist.append(distances[assignment[0][i], assignment[1][i]])
+                    scores[0].append(x)
+                    scores[1].append(fp)
+                    scores[2].append(o)
+                    scores[3].append(x_dist)
+                    scores[4].append(fp_dist)
+                    scores[5].append(o_dist)
 
-    return bonn_counts, outline_counts, add_inf_counts, total_true_pairings
+    return bonn_scores, outline_scores, add_inf_scores, nr_of_leaves, pairings_calculated, total_true_pairings
+
+def analyse(bonn, outline, add_inf, nr_leaves, nr_pairings, nr_true_pairings):
+    #x, fp, o, misses
+    results = []
+    for method in [bonn, outline, add_inf]:
+        if not method[0]:
+            results.append(None)
+        else:
+            x = sum(method[0]) # true positives
+            fp = sum(method[1]) # false positives
+            open = sum(method[2]) # open pairings (type 4 error),
+            misses = sum(nr_true_pairings) - x
+            mean_x_dist = None
+            mean_fp_dist = None
+            mean_open_dist = None
+            if x != 0:
+                mean_x_dist = sum(sum(ts) for ts in method[3]) / x
+            if fp != 0:
+                mean_fp_dist = sum(sum(ts) for ts in method[4]) / fp
+            if open != 0:
+                mean_open_dist = sum(sum(ts) for ts in method[5]) / open
+
+            method_result = np.array((x, fp, open, misses, mean_x_dist, mean_fp_dist, mean_open_dist))
+            results.append(method_result)
+
+    return results[0], results[1], results[2]
 
 def testing_pipeline(location=False, rotation=False, scale=False, as_features=False, standardise = True, trim_missing=True, components=50, time_gap=1):
     # Load data needed for Bonn method
@@ -172,14 +220,17 @@ def testing_pipeline(location=False, rotation=False, scale=False, as_features=Fa
 
     # Load data needed for my method
     directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'pca_input')
-    PCAH, test_ds, test_labels = leaf_encoding.get_encoding(train_split=0, directory=directory, standardise=standardise, location=location, rotation=rotation, scale=scale, as_features=as_features)
+    PCAH, test_ds, test_labels = leaf_encoding.get_encoding(train_split=0.2, random_split=False, directory=directory, standardise=standardise, location=location, rotation=rotation, scale=scale, as_features=as_features)
+
     if as_features:
         coordinates, additional_info = leaf_encoding.reshape_coordinates_and_additional_features(PCAH.training_data, nr_coordinates=500)
     else:
         additional_info = None
 
-    bonn_count, our_count, add_inf_count, total = get_score_across_dataset(centroids, centroid_labels, PCAH.training_data, PCAH.training_labels, PCAH, components=components, add_inf = additional_info, trim_missing=trim_missing, plotting=False)
-    return bonn_count, our_count, add_inf_count, total
+    # output scores are x, fp, o, matches, dist_mat
+    bonn_scores, outline_scores, add_inf_scores, nr_of_leaves, pairings_calculated, total_true_pairings = get_score_across_dataset(centroids, centroid_labels, PCAH.training_data, PCAH.training_labels, PCAH, components=components, add_inf=additional_info, trim_missing=trim_missing, plotting=False, time_gap=time_gap)
+
+    return bonn_scores, outline_scores, add_inf_scores, nr_of_leaves, pairings_calculated, total_true_pairings
 
 def tests():
 
@@ -241,28 +292,46 @@ def tests():
     i+=1
 
     # Could run this routine with different datasets as well
-    our_counts = []
-    bonn_counts = []
-    add_inf_counts = []
-    totals = []
-    for test, descr in zip(conditions, descriptions):
-        print('Running ' + descr)
-        bonn_count, our_count, add_inf_count, total = testing_pipeline(location=test[0], rotation=test[1], scale=test[2], as_features=test[3], standardise = False, trim_missing=False, components=22, time_gap=1)
-        our_counts.append(our_count)
-        bonn_counts.append(bonn_count)
-        add_inf_counts.append(add_inf_count)
-        totals.append(total)
-    print('Counts represent [true matches, mismatch of two leaves with existing matches, open before mismatch, open after mismatch, open open mismatch]')
-    print('Contour method')
-    print(np.asarray(our_counts))
-    print('Bonn method')
-    print(np.asarray(bonn_counts))
-    print('Only extra features method')
-    print(np.asarray(add_inf_counts))
-    print('Total possible true matches')
-    print(np.asarray(totals))
 
-    import pdb; pdb.set_trace()
+    parameters = [] # each element is location, rotation, scale, as_features)
+    details = [] # Strings for the user to interpret the output by
+    j=0
+
+    # Parameters are components=22, time_gap=1
+    parameters.append((22, 1))
+    details.append(f'Routine {j}: 22 components, using each annotated time step')
+    j+=1
+    parameters.append((22, 2))
+    details.append(f'Routine {j}: 22 components, using every 2nd annotated time step')
+    j+=1
+
+    routine_results = []
+    for nr, routine, detail in zip(range(len(parameters)), parameters, details):
+        print('Starting ' + detail)
+
+        bonn_results = []
+        outline_results = []
+        addinf_results = []
+
+        for test, descr in zip(conditions, descriptions):
+            print('Running ' + descr)
+            bonn_scores, outline_scores, add_inf_scores, nr_of_leaves, pairings_calculated, total_true_pairings = testing_pipeline(location=test[0], rotation=test[1], scale=test[2], as_features=test[3], standardise=True, trim_missing=False, components=routine[0], time_gap=routine[1])
+            #get true matches, false positives, open matches, followed by mean cost of each category:
+            bonn_stats, outline_stats, add_inf_stats = analyse(bonn_scores, outline_scores, add_inf_scores, nr_of_leaves, pairings_calculated, total_true_pairings)
+            bonn_results.append(bonn_stats)
+            outline_results.append(outline_stats)
+            addinf_results.append(add_inf_stats)
+
+        file_strings = [f'results/stats_{nr}_Bonn.out', f'results/stats_{nr}_outline.out', f'results/stats_{nr}_addinf.out']
+        for results, file in zip([bonn_results, outline_results, addinf_results], file_strings):
+            result = [elem for elem in results if elem is not None]
+            #result = [0 if elem is None else elem for elem in results]
+            np.savetxt(file, result, delimiter=',')
+
+        routine_results.append([bonn_results, outline_results, addinf_results, sum(nr_of_leaves), sum(pairings_calculated), sum(total_true_pairings), detail])
+
+
+    return routine_results
 
 ''' PLOTTING '''
 
@@ -310,6 +379,7 @@ def plot_bonn_assignment(before, after, before_labels, after_labels, legible_mat
 def plot_heatmap(data, labels=None, ax = None, show_values=False):
     '''
     Plots a distance matrix as a heatmap, wich axis ticks, and values displayed in the cells.
+    Expects a matrix of distance values.
     '''
     given_ax = ax
     if given_ax is None:
@@ -331,3 +401,6 @@ def plot_heatmap(data, labels=None, ax = None, show_values=False):
 if __name__== "__main__":
 
     tests()
+
+    #bonn_scores, outline_scores, add_inf_scores, nr_of_leaves, pairings_calculated, total_true_pairings = testing_pipeline(location=True, rotation=True, scale=False, as_features=False, standardise = True, trim_missing=False, components=5, time_gap=1)
+    #bonn_stats, outline_stats, add_inf_stats = analyse(bonn_scores, outline_scores, add_inf_scores, nr_of_leaves, pairings_calculated, total_true_pairings)

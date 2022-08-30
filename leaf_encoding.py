@@ -145,14 +145,24 @@ def reshape_coordinates_and_additional_features(data, nr_coordinates=500):
         additional_features = data[nr_coordinates*3:]
     return stacked,additional_features
 
-def split_dataset(data, labels, split = 0.2):
+def split_dataset(data, labels, split = 0.2, random=True):
+
+    ''' splits of a specified % of the input leaves for testing only. The PCA will not be trained on this data.'''
+
     total_nr_examples = data.shape[0]
     nr_test_examples = int(np.floor(split * total_nr_examples))
-    indeces = np.random.choice(range(total_nr_examples), size=nr_test_examples, replace=False)
-    test_data = data[indeces,:,:]
-    test_labels = labels[indeces,:]
-    train_data = np.delete(data, indeces, axis=0)
-    train_labels = np.delete(labels, indeces, axis=0)
+    if random:
+        indeces = np.random.choice(range(total_nr_examples), size=nr_test_examples, replace=False)
+        test_data = data[indeces,:,:]
+        test_labels = labels[indeces,:]
+        train_data = np.delete(data, indeces, axis=0)
+        train_labels = np.delete(labels, indeces, axis=0)
+    else:
+        indeces = np.arange(0, nr_test_examples)
+        test_data = data[indeces,:,:]
+        test_labels = labels[indeces,:]
+        train_data = np.delete(data, indeces, axis=0)
+        train_labels = np.delete(labels, indeces, axis=0)
     return train_data, test_data, train_labels, test_labels
 
 def select_subset(data, labels, plant_nr=None, timestep=None, day=None, leaf=None):
@@ -236,13 +246,14 @@ class PCA_Handler:
             output_data = projection
         return output_data
 
-def get_encoding(train_split=0, directory=None, standardise=True, location=False, rotation=False, scale=False, as_features=False):
+def get_encoding(train_split=0, random_split=True, directory=None, standardise=True, location=False, rotation=False, scale=False, as_features=False):
     if directory is None:
         directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'pca_input')
     data, names = load_inputs(directory) # at this stage they are in local frame, with centroid as origin, but the scale is still not normalised
     labels = get_labels(names)
+    data, labels = util.sort_examples(data, labels) #sort
 
-    train_ds, test_ds, train_labels, test_labels = split_dataset(data, labels, split=train_split)
+    train_ds, test_ds, train_labels, test_labels = split_dataset(data, labels, split=train_split, random=random_split)
 
     if as_features:
         input_data, train_labels = add_scale_location_rotation_as_features(train_ds, train_labels, loc=location, rot=rotation, sc=scale)
@@ -539,7 +550,7 @@ def recreate_artefact(data, PCAH):
 if __name__== "__main__":
     directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'pca_input')
 
-    PCAH, test_ds, test_labels = get_encoding(train_split=0, directory=directory, standardise=True, location=False, rotation=False, scale=False, as_features=False)
+    PCAH, test_ds, test_labels = get_encoding(train_split=0.2, random_split=True, directory=directory, standardise=True, location=False, rotation=False, scale=False, as_features=False)
 
     # Verify that scaled and re-scaled data is the same as the original
     np.testing.assert_array_almost_equal(PCAH.scaler.inverse_transform(PCAH.scaler.transform(PCAH.training_data[:2])), PCAH.training_data[:2])

@@ -61,7 +61,7 @@ def fs_distances_between_steps(centroids, centroid_labels, data, labels, PCAH, c
 if __name__== "__main__":
     # Load data and fit pca
     directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'pca_input')
-    PCAH, test_ds, test_labels = leaf_encoding.get_encoding(train_split=0, directory=directory, standardise=True, location=True, rotation=True, scale=False, as_features=False)
+    PCAH, test_ds, test_labels = leaf_encoding.get_encoding(train_split=0, random_split=False, directory=directory, standardise=True, location=False, rotation=False, scale=False, as_features=False)
 
     directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'transform_log')
     centroids, centroid_labels = leaf_matching.get_location_info(directory) # already sorted
