@@ -58,6 +58,21 @@ def fs_distances_between_steps(centroids, centroid_labels, data, labels, PCAH, c
     plot_feature_space_distance_histogram(same_leaf_distances_c, different_leaf_distances_c)
     return same_leaf_distances, different_leaf_distances, same_leaf_distances_c, different_leaf_distances_c
 
+
+# if test_ds.size == 0:
+#     test_ds = PCAH.training_data
+#     test_labels = PCAH.training_labels
+# if as_features:
+#     coordinates, additional_info = leaf_encoding.reshape_coordinates_and_additional_features(test_ds, nr_coordinates=500)
+# else:
+#     additional_info = None
+#
+# # output scores are x, fp, o, matches, dist_mat
+# bonn_scores, outline_scores, add_inf_scores, nr_of_leaves, pairings_calculated, total_true_pairings = get_score_across_dataset(centroids, centroid_labels, test_ds, test_labels, PCAH, components=components, add_inf=additional_info, trim_missing=trim_missing, plotting=False, time_gap=time_gap)
+#
+#
+
+
 if __name__== "__main__":
     # Load data and fit pca
     directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'pca_input')

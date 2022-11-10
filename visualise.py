@@ -48,7 +48,8 @@ def read_obj_with_no_faces(file):
 
     # make into o3D plottable object
     line_set = o3d.geometry.LineSet(points=o3d.utility.Vector3dVector(vertices), lines=o3d.utility.Vector2iVector(edges))
-    return line_set
+    point_cloud = array_to_o3d_pointcloud(vertices)
+    return line_set, point_cloud
 
 def read_sampled_outline(file):
     '''
@@ -66,7 +67,10 @@ def array_to_o3d_pointcloud(data):
     '''
     if data is not None:
         pcd = o3d.geometry.PointCloud()
-        pcd.points = o3d.utility.Vector3dVector(data)
+        if len(data.shape) > 1:
+            pcd.points = o3d.utility.Vector3dVector(data)
+        else:
+            pcd.points = o3d.utility.Vector3dVector([data])
         return pcd
     else:
         return None
@@ -109,9 +113,9 @@ def assemble_geometries(dir, standardise=True, visualise=True, plant_nr=0, times
     PCAH, test_ds, test_labels = leaf_encoding.get_encoding(train_split=0, random_split=False, directory=pca_input_directory, standardise=standardise, location=False, rotation=False, scale=False, as_features=False)
 
     subset, subset_labels = leaf_encoding.select_subset(PCAH.training_data, PCAH.training_labels, plant_nr=plant_nr, timestep=timestep, leaf=leaf_nr)
-    subset_labels = subset_labels[0]
 
     if subset.shape[0] > 0:
+        subset_labels = subset_labels[0]
         pc_file = os.path.join(dir, 'aligned', 'plant' + str(subset_labels[0]) + '_step' + str(subset_labels[1]) + '_day' + str(subset_labels[2]) + '_leaf' + str(subset_labels[3]) + '.ply')
         pcd = read_ply_cloud(pc_file)
 
@@ -121,16 +125,16 @@ def assemble_geometries(dir, standardise=True, visualise=True, plant_nr=0, times
 
         outline_file = os.path.join(dir, 'outline', 'plant' + str(subset_labels[0]) + '_step' + str(subset_labels[1]) + '_day' + str(subset_labels[2]) + '_leaf' + str(subset_labels[3]) + '_full.obj')
         outline_filtered_file = os.path.join(dir, 'outline', 'plant' + str(subset_labels[0]) + '_step' + str(subset_labels[1]) + '_day' + str(subset_labels[2]) + '_leaf' + str(subset_labels[3]) + '_main.obj')
-        outline_full = read_obj_with_no_faces(outline_file)
-        outline_filtered = read_obj_with_no_faces(outline_filtered_file)
+        outline_full, outline_full_pc = read_obj_with_no_faces(outline_file)
+        outline_filtered, outline_filtered_pc = read_obj_with_no_faces(outline_filtered_file)
 
         sampled_file = os.path.join(dir, 'pca_input', 'plant' + str(subset_labels[0]) + '_step' + str(subset_labels[1]) + '_day' + str(subset_labels[2]) + '_leaf' + str(subset_labels[3]) + '_main.npy')
         sampled_outline = array_to_o3d_pointcloud(read_sampled_outline(sampled_file))
 
-        geometries = [pcd, mesh, outline_full, outline_filtered, sampled_outline]
+        geometries = [pcd, mesh, (outline_full, outline_full_pc), (outline_filtered, outline_filtered_pc), sampled_outline]
         if visualise:
             draw(geometries, 'name', offset = True)
-            draw2(geometries, 'name', offset = True)
+            #draw2([pcd, mesh, outline_full, outline_filtered, sampled_outline], 'name', offset = True)
 
         return geometries
     else:
@@ -144,13 +148,23 @@ def draw(geometries, file, offset = False, labels=None):
     vis = o3d.visualization.Visualizer()
     vis.create_window(window_name=file)
     width = 0
+    if type(geometries) is not list:
+        geometries = [geometries]
     for i,geo in enumerate(geometries):
         geocopy = copy.deepcopy(geo)
         try:
-            if offset:
-                geocopy.translate((width,0,0))
-                width += 1.2 * (geo.get_max_bound()[0] - geo.get_min_bound()[0])
-            vis.add_geometry(geocopy)
+            if type(geocopy) is tuple:
+                if offset:
+                    for element in geocopy:
+                        element.translate((width,0,0))
+                    width += 1.2 * (geocopy[0].get_max_bound()[0] - geocopy[0].get_min_bound()[0])
+                for element in geocopy:
+                    vis.add_geometry(element)
+            else:
+                if offset:
+                    geocopy.translate((width,0,0))
+                    width += 1.2 * (geocopy.get_max_bound()[0] - geocopy.get_min_bound()[0])
+                vis.add_geometry(geocopy)
         except:
             pass
     vis.run()
@@ -213,7 +227,7 @@ def same_leaf_across_time(directory=None):
     '''
     if directory is None:
         directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'pca_input')
-    PCAH, test_ds, test_labels = leaf_encoding.get_encoding(train_split=0, random_split=False, directory=directory, standardise=standardise, location=False, rotation=False, scale=False, as_features=False)
+    PCAH, test_ds, test_labels = leaf_encoding.get_encoding(train_split=0, random_split=False, directory=directory, standardise=True, location=False, rotation=False, scale=False, as_features=False)
     labels = PCAH.training_labels
 
     for plant in np.unique(labels[:,0]):
@@ -223,9 +237,23 @@ def same_leaf_across_time(directory=None):
             clouds = [array_to_o3d_pointcloud(outline) for outline in stacked]
             draw(clouds, "leaf number {}".format(leaf), offset=True, labels=sub_labels[:,1])
 
+def example_plot(data_directory):
+    #leaves=[(0,5,11)]
+    leaves = [(0,1,2),(0,1,3),(0,1,4),(0,2,2),(0,2,3),(0,2,4),(0,2,5),(0,2,6)]#[(0,4,2), (0,8,15), (6,4,4), (5,6,4)]
+    for leaf in leaves:
+        geometries = assemble_geometries(data_directory, standardise = True, visualise=True, plant_nr=leaf[0], timestep=leaf[1], leaf_nr=leaf[2])
+        starting_point = array_to_o3d_pointcloud(np.asarray(geometries[-1].points)[0])
+        starting_point.paint_uniform_color([0, 0, 0])
+        geometries[-1] = (geometries[-1], starting_point)
+        for geo in geometries:
+            draw(geo, 'name', offset = True)
+
 if __name__== "__main__":
     #timestep_comparison()
     #same_leaf_across_time()
 
     data_directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed')
-    geometries = assemble_geometries(data_directory, standardise = True, visualise=True, plant_nr=0, timestep=0, leaf_nr=3)
+    #geometries = assemble_geometries(data_directory, standardise = True, visualise=False, plant_nr=0, timestep=0, leaf_nr=3)
+    #draw(geometries, 'name', offset = True)
+
+    example_plot(data_directory)

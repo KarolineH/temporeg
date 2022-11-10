@@ -43,7 +43,7 @@ def isolate_and_align_leaves(data, out_directory, transform_directory):
                 w_axis, l_axis, h_axis = leafAxisDetermination.process() # give us the leaf axes
                 # Some leaves are upside down at this stage (x and y both flipped) because they grow 'towards' the emergence point, not away
 
-                centroid = np.mean(leaf[0], axis=0)
+                centroid = np.mean(leaf[0], axis=0) # should be centroid w.r.t. emergence point
                 #translate the leaf point cloud to its centroid, rather than plant emergence point
                 pc = leaf[0] - centroid
                 # rotate to the extracted leaf coordinate system

@@ -146,8 +146,7 @@ def reshape_coordinates_and_additional_features(data, nr_coordinates=500):
     return stacked,additional_features
 
 def split_dataset(data, labels, split = 0.2, random=True):
-
-    ''' splits of a specified % of the input leaves for testing only. The PCA will not be trained on this data.'''
+    ''' splits off a specified % of the input leaves for testing only. The PCA will not be trained on this data.'''
 
     total_nr_examples = data.shape[0]
     nr_test_examples = int(np.floor(split * total_nr_examples))
@@ -168,7 +167,6 @@ def split_dataset(data, labels, split = 0.2, random=True):
 def select_subset(data, labels, plant_nr=None, timestep=None, day=None, leaf=None):
     subset = copy.deepcopy(data)
     sublabels = copy.deepcopy(labels)
-
     if plant_nr is not None:
         subset = subset[np.argwhere(sublabels[:,0]==plant_nr).flatten(),:]
         sublabels = sublabels[np.argwhere(sublabels[:,0]==plant_nr).flatten(),:]
@@ -255,6 +253,7 @@ def get_encoding(train_split=0, random_split=True, directory=None, standardise=T
 
     train_ds, test_ds, train_labels, test_labels = split_dataset(data, labels, split=train_split, random=random_split)
 
+
     if as_features:
         input_data, train_labels = add_scale_location_rotation_as_features(train_ds, train_labels, loc=location, rot=rotation, sc=scale)
         if test_ds.size > 0:
@@ -265,8 +264,11 @@ def get_encoding(train_split=0, random_split=True, directory=None, standardise=T
             test_ds, test_labels, test_location_info, test_rotation_info, test_scale_info = add_scale_location_rotation_full(test_ds, test_labels, location, rotation, scale)
         # Flatten training set to use for PCA
         input_data = train_ds.reshape(train_ds.shape[0], train_ds.shape[1]*train_ds.shape[2])
+        test_ds = test_ds.reshape(test_ds.shape[0], test_ds.shape[1]*test_ds.shape[2])
 
     input_data, input_labels = util.sort_examples(input_data, train_labels) #sort
+    test_ds, test_labels = util.sort_examples(test_ds, test_labels) #sort
+
     PCAH = PCA_Handler(input_data, input_labels, standard=standardise)
     return PCAH, test_ds, test_labels
 
@@ -435,16 +437,19 @@ def new_random_leaf_from_distribution(query, labels, PCAH, components=50, draw=T
         visualise.draw2([cloud, cloud2], 'test', offset = True )
     return ranges
 
-def t_sne(data, labels=None, label_meaning=None):
+def t_sne(data, labels=None, marker_data=None, label_meaning=None):
     '''
     Performs tSNE on the given feature vectors, including any additional information given at the end of the vector.
     Intended to use only with coordinates normalised in position, rotation, and scale.
     The markers in the plot do not show location, rotation, or scale information. Only leaf shape.
     '''
+    if marker_data is None:
+        marker_data = data
     tsne = TSNE()
     X_embedded = tsne.fit_transform(data)
-    coordinates, additional_features = reshape_coordinates_and_additional_features(data, nr_coordinates=500)
+    coordinates, additional_features = reshape_coordinates_and_additional_features(marker_data, nr_coordinates=500)
     markers = [path.Path(leaf[:,:2]) for leaf in coordinates]
+
 
     if labels is not None:
         max_color = max(labels)
@@ -466,37 +471,49 @@ def t_sne(data, labels=None, label_meaning=None):
             scatterplot = ax.scatter(_x, _y, marker=_m, s=500, c='#FFFFFF', edgecolors='#1f77b4')
     plt.show()
 
-def pca_then_t_sne(data, PCAH, labels=None, label_meaning=None, nr_components=50):
+def pca_then_t_sne(data, PCAH, labels=None, marker_data=None, label_meaning=None, nr_components=50):
     '''
     Performs tSNE on the extracted feature components by PCA.
     Intended to use only with coordinates normalised in position, rotation, and scale.
     The markers in the plot do not show location, rotation, or scale information. Only leaf shape.
     '''
+    if marker_data is None:
+        marker_data = data
     #tsne on the pca extracted feature components
     tsne = TSNE()
+    training_weights = PCAH.compress(PCAH.training_data, nr_components)
     weights = PCAH.compress(data, nr_components)
-    X_embedded = tsne.fit_transform(weights.T)
-    coordinates, additional_features = reshape_coordinates_and_additional_features(data, nr_coordinates=500)
+    X_embedded = tsne.fit_transform(np.vstack((weights, training_weights)))
+    coordinates, additional_features = reshape_coordinates_and_additional_features(marker_data, nr_coordinates=500)
     markers = [path.Path(leaf[:,:2]) for leaf in coordinates]
 
     if labels is not None:
-        max_color = max(labels)
+        max_color = np.unique(labels[:,-1]).shape[0]
+        #max(labels[:,-1])
         cmap = cm.get_cmap('rainbow')
-        colours = cmap((labels/max_color))
+        colours = cmap(np.arange(0, max_color, 1) / (max_color-1))
+        colours = ['cornflowerblue', 'indigo', 'green', 'orangered']
+        col_dict = {}
+        for i,col in enumerate(np.unique(labels[:,-1])):
+            col_dict[col] = colours[i]
+
 
     fig, ax = plt.subplots()
     ax.set_title('t-SNE embedding of leaf shape feature vectors after PCA')
     if labels is not None:
-        for i, _m, _x, _y in zip(range(len(markers)), markers, X_embedded[:,0], X_embedded[:,1]):
-            scatterplot = ax.scatter(_x, _y, marker=_m, s=500, c='#FFFFFF', edgecolors=colours[i].reshape(1,-1))
+        #plt.plot(X_embedded[:weights.shape[0],0], X_embedded[:weights.shape[0],1])
+        for i, _m, _x, _y, leaf, time in zip(range(len(markers)), markers, X_embedded[:weights.shape[0],0], X_embedded[:weights.shape[0],1], labels[:,3], labels[:,1]):
+            scatterplot = ax.scatter(_x, _y, marker=_m, s=4500, linewidth=2, c='#FFFFFF', edgecolors=col_dict[leaf])
+            txt = ax.text(_x, _y, s=str(time), color='black', fontsize=12)
         #legend1 = ax.legend(*ax.legend_elements(), title="Classes")
-        legend1 = ax.legend(np.unique(labels, axis = 0), labelcolor=cmap((np.unique(labels, axis = 0)/max_color)), ncol=2, markerscale=0)
+        legend1 = ax.legend(np.unique(labels[:,-1], axis = 0), labelcolor=colours, ncol=2, markerscale=0)
         ax.add_artist(legend1)
         if label_meaning is not None:
             ax.set_title('t-SNE embedding of leaf shape feature vectors after PCA. Colours represent {}'.format(label_meaning))
     else:
         for _m, _x, _y in zip(markers, X_embedded[:,0], X_embedded[:,1]):
             scatterplot = ax.scatter(_x, _y, marker=_m, s=500, c='#FFFFFF', edgecolors='#1f77b4')
+    #plt.gca().set_aspect('equal', adjustable='box')
     plt.show()
     return
 
@@ -550,31 +567,48 @@ def recreate_artefact(data, PCAH):
 if __name__== "__main__":
     directory = os.path.join('/home', 'karolineheiwolt','workspace', 'data', 'Pheno4D', '_processed', 'pca_input')
 
-    PCAH, test_ds, test_labels = get_encoding(train_split=0.2, random_split=True, directory=directory, standardise=True, location=False, rotation=False, scale=False, as_features=False)
+    # train_split=0.574 #  for plants 5,6,7 for training, remaining 4 for testing
+    train_split=0.754 # for plants 6 and 7 for training, remaining 5 for testing
+    # train_split=0.89 # for plant 7 for training, remaining 6 for testing
+    PCAH, test_ds, test_labels = get_encoding(train_split=train_split, random_split=False, directory=directory, standardise=True, location=True, rotation=True, scale=False, as_features=False)
 
     # Verify that scaled and re-scaled data is the same as the original
     np.testing.assert_array_almost_equal(PCAH.scaler.inverse_transform(PCAH.scaler.transform(PCAH.training_data[:2])), PCAH.training_data[:2])
     # Verify that the compressed and decompressed data is the same as the original when using ALL components
     np.testing.assert_array_almost_equal(PCAH.training_data[:2], PCAH.decompress(PCAH.compress(PCAH.training_data[:2], PCAH.max_components),PCAH.max_components))
-    import pdb; pdb.set_trace()
+
     #plot_explained_variance(PCAH)
-    #perform_single_reprojection(PCAH.training_data[0], PCAH, components=5, draw=True)
+    #perform_single_reprojection(PCAH.training_data[0], PCAH, components=22, draw=True)
     #test_reprojection_loss(PCAH.training_data, PCAH)
 
     #plot_3_components(PCAH.training_data, PCAH)
     #plot_3_components(PCAH.training_data, PCAH, labels = PCAH.training_labels)
+
     #plot_2_components(PCAH.training_data, PCAH, labels = PCAH.training_labels, components = [0,1])
 
     #ranges = new_random_leaf_from_distribution(PCAH.training_data, PCAH.training_labels, PCAH)
 
-    #t_sne(PCAH.training_data, PCAH.training_labels[:,3], label_meaning='leaf number')
-    #pca_then_t_sne(PCAH.training_data, PCAH, labels=PCAH.training_labels[:,3], label_meaning='leaf number')
-    #t_sne(PCAH.training_data, label_meaning='leaf number')
-    #pca_then_t_sne(PCAH.training_data, PCAH, label_meaning='leaf number')
+    # marker_data = get_encoding(train_split=train_split, random_split=False, directory=directory, standardise=True, location=False, rotation=False, scale=False, as_features=False)[1]
+    #t_sne(PCAH.training_data, PCAH.training_labels[:,3], marker_data = marker_data, label_meaning='leaf number')
+    #pca_then_t_sne(test_ds, PCAH, labels=PCAH.training_labels[:,3], marker_data = marker_data, label_meaning='leaf number')
+    #t_sne(PCAH.training_data, marker_data = marker_data, label_meaning='leaf number')
+    # pca_then_t_sne(test_ds, PCAH, marker_data = marker_data, nr_components=22)
 
-    #single_plant_leaves, single_plant_labels= select_subset(PCAH.training_data, PCAH.training_labels, plant_nr = 6)
+    single_plant_leaves0, single_plant_labels0= select_subset(test_ds, test_labels, plant_nr = 1)
+    input, labels = select_subset(test_ds, test_labels, plant_nr = 0, leaf=21)
+    input, labels = np.vstack((input, select_subset(test_ds, test_labels, plant_nr = 1, leaf=3)[0])), np.vstack((labels, select_subset(test_ds, test_labels, plant_nr = 1, leaf=3)[1]))
+    input, labels = np.vstack((input, select_subset(test_ds, test_labels, plant_nr = 1, leaf=15)[0])), np.vstack((labels, select_subset(test_ds, test_labels, plant_nr = 1, leaf=15)[1]))
+    #input, labels = np.vstack((input, select_subset(test_ds, test_labels, plant_nr = 1, leaf=13)[0])), np.vstack((labels, select_subset(test_ds, test_labels, plant_nr = 1, leaf=13)[1]))
+    input, labels = np.vstack((input, select_subset(test_ds, test_labels, plant_nr = 1, leaf=5)[0])), np.vstack((labels, select_subset(test_ds, test_labels, plant_nr = 1, leaf=5)[1]))
+    #input, labels = np.vstack((input, select_subset(test_ds, test_labels, plant_nr = 1, leaf=6)[0])), np.vstack((labels, select_subset(test_ds, test_labels, plant_nr = 1, leaf=6)[1]))
+    #input, labels = np.vstack((input, select_subset(test_ds, test_labels, plant_nr = 1, leaf=11)[0])), np.vstack((labels, select_subset(test_ds, test_labels, plant_nr = 1, leaf=11)[1]))
+    input, labels = np.vstack((input, select_subset(test_ds, test_labels, plant_nr = 1, leaf=10)[0])), np.vstack((labels, select_subset(test_ds, test_labels, plant_nr = 1, leaf=10)[1]))
+
+    # input = np.vstack((np.vstack((np.vstack((single_plant_leaves1,single_plant_leaves2)), single_plant_leaves3)),single_plant_leaves4))
+    # labels = np.vstack((np.vstack((np.vstack((single_plant_labels1,single_plant_labels2)),single_plant_labels3)),single_plant_labels4))
     #t_sne(single_plant_leaves, single_plant_labels[:,3], label_meaning='leaf number')
-    #pca_then_t_sne(single_plant_leaves, PCAH, single_plant_labels[:,3], label_meaning='leaf number')
+    #pca_then_t_sne(single_plant_leaves0, PCAH, labels=single_plant_labels0[:,3], label_meaning='leaf number', nr_components=22)
+    pca_then_t_sne(input, PCAH, labels=labels, label_meaning='leaf number', nr_components=22)
 
     #analyse_feature_space_clusters(PCAH.training_data, PCAH.training_labels, PCAH)
     #recreate_artefact(PCAH.training_data, PCAH)

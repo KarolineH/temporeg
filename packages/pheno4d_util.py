@@ -3,7 +3,6 @@ import numpy as np
 from palettable.cartocolors.qualitative import Prism_10
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
-import matplotlib.pyplot as plt
 import open3d.visualization.gui as gui
 import open3d as o3d
 
